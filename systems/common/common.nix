@@ -39,6 +39,7 @@
   programs.nix-ld.enable = true;
   environment.systemPackages = [
     pkgs.nixpkgs-fmt
+    pkgs.oh-my-posh
   ];
 
   # Enable the OpenSSH daemon.
@@ -77,6 +78,7 @@
     gc = {
       automatic = true;
       dates = "weekly";
+      options = "--delete-older-than 14d"
     };
     optimise = {
       automatic = true;
@@ -85,6 +87,14 @@
       ];
     };
   };
+
+  system.autoUpgrade = {
+    enable = true;
+    allowReboot = true;
+    channel = "https://channels.nixos.org/nixos-23.11-small";
+  }
+
+
 
   # This option defines the first version of NixOS you have installed on this particular machine,
   # and is used to maintain compatibility with application data (e.g. databases) created on older NixOS versions.

@@ -4,16 +4,16 @@
     imports =
     [
       ./hardware-configuration.nix
-      ./common.nix
-      ./ssh-user-keys.nix
+      ../common/common.nix
+      ../commonssh-user-keys.nix
     ];
 
   networking = {
-    hostName = "router";
+    hostName = "data-hoard";
     domain = "stealthdragonland.net";
     interfaces.enp2s0.ipv4.addresses = [
       {
-        address = "192.168.0.155";
+        address = "192.168.0.50";
         prefixLength = 20;
       }
     ];
@@ -24,5 +24,8 @@
       allowedUDPPorts = [ ];
     };
   };
+
+
+  boot.kernelPackages = pkgs.zfs.latestCompatibleLinuxPackages;
 
 }
