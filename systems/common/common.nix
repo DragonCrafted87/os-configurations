@@ -78,7 +78,7 @@
     gc = {
       automatic = true;
       dates = "weekly";
-      options = "--delete-older-than 14d"
+      options = "--delete-older-than 14d";
     };
     optimise = {
       automatic = true;
@@ -92,7 +92,7 @@
     enable = true;
     allowReboot = true;
     channel = "https://channels.nixos.org/nixos-23.11-small";
-  }
+  };
 
 
 

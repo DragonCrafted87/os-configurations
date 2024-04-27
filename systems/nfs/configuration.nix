@@ -1,6 +1,12 @@
 { config, lib, pkgs, modulesPath, ... }:
 
 {
+    imports =
+    [
+      ./hardware-configuration.nix
+      ./common.nix
+      ./ssh-user-keys.nix
+    ];
 
   fileSystems."/srv/data" =
     {
