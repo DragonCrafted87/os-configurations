@@ -1,0 +1,34 @@
+$ORIGIN stealthdragonland.net.
+$TTL 120
+@               IN  SOA   ns.stealthdragonland.net. admin.stealthdragonland.net. ( 2020091025 7200 3600 1209600 3600 )
+
+;; NS Records
+@               IN  NS    ns
+
+;; A Records
+@               IN  A   192.168.8.11
+ns              IN  A   192.168.0.1
+
+mc-vpp          IN  A   192.168.8.41
+mc-redstone     IN  A   192.168.8.42
+hass            IN  A   192.168.8.20
+media           IN  A   192.168.8.30
+foundry         IN  A   192.168.8.40
+
+printer         IN  A   192.168.0.6
+weatherhub      IN  A   192.168.0.102
+primary-ap      IN  A   192.168.0.20
+
+amd64node2      IN  A   192.168.0.51
+amd64node4      IN  A   192.168.0.53
+amd64node5      IN  A   192.168.0.54
+
+dracolisk       IN  A   192.168.0.201
+
+
+;; CNAME Records
+www             IN  CNAME stealthdragonland.net.
+
+;; SRV Records
+_minecraft._tcp.mc-vpp.stealthdragonland.net.  1  IN  SRV  1 1 25565 mc-vpp.stealthdragonland.com.
+_minecraft._tcp.mc-redstone.stealthdragonland.net.  1  IN  SRV  1 1 25565 mc-redstone.stealthdragonland.com.

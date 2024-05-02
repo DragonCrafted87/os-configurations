@@ -8,6 +8,10 @@
       ./ssh-user-keys.nix
     ];
 
+  boot.kernel.sysctl = {
+    "net.ipv4.conf.all.forwarding" = true;
+  };
+
   networking = {
     hostName = "router";
     domain = "stealthdragonland.net";
