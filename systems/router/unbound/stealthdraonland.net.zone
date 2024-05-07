@@ -14,6 +14,7 @@ mc-redstone     IN  A   192.168.8.42
 hass            IN  A   192.168.8.20
 media           IN  A   192.168.8.30
 foundry         IN  A   192.168.8.40
+time            IN  A   192.168.8.50
 
 printer         IN  A   192.168.0.6
 weatherhub      IN  A   192.168.0.102
@@ -23,6 +24,7 @@ amd64node2      IN  A   192.168.0.51
 amd64node4      IN  A   192.168.0.53
 amd64node5      IN  A   192.168.0.54
 
+castellan       IN  A   192.168.0.200
 dracolisk       IN  A   192.168.0.201
 
 
@@ -30,5 +32,5 @@ dracolisk       IN  A   192.168.0.201
 www             IN  CNAME stealthdragonland.net.
 
 ;; SRV Records
-_minecraft._tcp.mc-vpp.stealthdragonland.net.  1  IN  SRV  1 1 25565 mc-vpp.stealthdragonland.com.
-_minecraft._tcp.mc-redstone.stealthdragonland.net.  1  IN  SRV  1 1 25565 mc-redstone.stealthdragonland.com.
+_minecraft._tcp.mc-vpp.stealthdragonland.net.  1  IN  SRV  1 1 25565 mc-vpp.stealthdragonland.net.
+_minecraft._tcp.mc-redstone.stealthdragonland.net.  1  IN  SRV  1 1 25565 mc-redstone.stealthdragonland.net.
