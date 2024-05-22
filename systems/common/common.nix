@@ -31,6 +31,11 @@
         extraGroups = [ "wheel" "sudo" ];
         packages = with pkgs; [
         ];
+        openssh.authorizedKeys.keys = [
+          "ecdsa-sha2-nistp521 AAAAE2VjZHNhLXNoYTItbmlzdHA1MjEAAAAIbmlzdHA1MjEAAACFBAGDiBGym4s00mpXw/SAZfPvvyd2AG9hzFRo3X1TWedy3Z0mi0FJZkUz2jPQ3uLAlRQ13/lYcE54MWlBru5h4lZxiwAhf2+eQhcuAoljN9p/ZtYJV6lcSUz2Nsy0gG3xQh09My44PUtOl0FWyFbsG2l9jaKUT47XRgn7FzbgL3rnBCbXbg=="
+          "ecdsa-sha2-nistp521 AAAAE2VjZHNhLXNoYTItbmlzdHA1MjEAAAAIbmlzdHA1MjEAAACFBAFrXPe96bFYNw+e97xQx3/+PcMmpU4XPicBs5ECI/lCwKSwWnjk91+pP8xn908YWS85zaxLjCWamypodHI5aX9N/wGJhW8DzHPrXTvM920ajd6RXFrs5jl0XjQtOoyNxfwNPyXrrLS/NlvvbWfI5qG2n+IXWJHXT4h/BwoE2PIA8gnhWQ=="
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID7f/EzOrwGMT6ePdmXiqCbez4VKKCrZsYyEY71KO9/1"
+        ];
       };
     };
   };
