@@ -86,8 +86,8 @@
   services.dnsmasq = {
     enable = true;
     settings = {
-      server = [ "" ];
-      port = "0";
+      server = [ "192.168.0.1" ];
+      #port = "0";
       domain-needed = true;
       domain  = "stealthdragonland.net";
       interface = "lan";
