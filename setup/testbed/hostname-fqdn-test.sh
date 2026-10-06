@@ -131,6 +131,69 @@ grep -qx '127.0.1.1  runewyrm' "$HOSTS_FILE" || fail "dry-run rename wrote the h
     ensure_hosts_short_name study >"${work}/write.out"
     grep -qx '127.0.1.1  study' "$HOSTS_FILE" || fail "hosts write left the old short name"
     [[ ! -e "${work}/.write-hosts.dotfiles-tmp" ]] || fail "hosts write left a temp file"
+    [[ "$(stat -c %a "$HOSTS_FILE")" == "644" ]] || fail "hosts write mode is $(stat -c %a "$HOSTS_FILE")"
+)
+
+(
+    DOTFILES_DRY_RUN=0
+    export HOSTS_FILE="${work}/mode-hosts"
+    printf '127.0.1.1  oldname\n' >"$HOSTS_FILE"
+    chmod 0600 "$HOSTS_FILE"
+    ensure_hosts_short_name study >"${work}/mode-user.out"
+    [[ "$(stat -c %a "$HOSTS_FILE")" == "644" ]] || fail "user hosts write kept mode $(stat -c %a "$HOSTS_FILE")"
+)
+
+(
+    DOTFILES_DRY_RUN=1
+    export HOSTS_FILE="${work}/hidden-hosts"
+    secret="${work}/hidden-hosts.secret"
+    printf '127.0.1.1  study\n' >"$HOSTS_FILE"
+    cp "$HOSTS_FILE" "$secret"
+    chmod 000 "$HOSTS_FILE"
+    sudo() {
+        if [[ "$1" == cat && "$2" == "$HOSTS_FILE" ]]; then
+            command cat "$secret"
+            return 0
+        fi
+        printf 'sudo was called: %s\n' "$*" >&2
+        exit 99
+    }
+    ensure_hosts_short_name study >"${work}/hidden.out"
+    grep -F "hosts ${HOSTS_FILE} mode 0644" "${work}/hidden.out" >/dev/null \
+        || fail "dry-run did not record the hosts mode"
+    [[ "$(stat -c %a "$HOSTS_FILE")" == "0" ]] || fail "dry-run changed the hosts mode"
+)
+
+(
+    unset -f sudo
+    DOTFILES_DRY_RUN=0
+    export HOSTS_FILE="${work}/root-mode-hosts"
+    printf '127.0.1.1  study\n' >"$HOSTS_FILE"
+    sudo chown root:root "$HOSTS_FILE"
+    sudo chmod 0600 "$HOSTS_FILE"
+    [[ ! -r "$HOSTS_FILE" ]] || fail "mode-only hosts file is readable"
+    ensure_hosts_short_name study >"${work}/mode.out"
+    grep -F "hosts ${HOSTS_FILE} mode 0644" "${work}/mode.out" >/dev/null \
+        || fail "mode repair was not logged"
+    [[ "$(stat -c %a "$HOSTS_FILE")" == "644" ]] || fail "mode repair left $(stat -c %a "$HOSTS_FILE")"
+    grep -qx '127.0.1.1  study' "$HOSTS_FILE" || fail "mode repair changed the hosts line"
+)
+
+(
+    unset -f sudo
+    DOTFILES_DRY_RUN=0
+    export HOSTS_FILE="${work}/root-hosts"
+    printf '127.0.1.1  oldname\n' >"$HOSTS_FILE"
+    sudo chown root:root "$HOSTS_FILE"
+    sudo chmod 0600 "$HOSTS_FILE"
+    [[ ! -r "$HOSTS_FILE" ]] || fail "root hosts file is readable"
+    ensure_hosts_short_name study >"${work}/root.out"
+    grep -qx '127.0.1.1  study' "$HOSTS_FILE" || fail "root hosts write left the old short name"
+    [[ "$(stat -c %a "$HOSTS_FILE")" == "644" ]] || fail "root hosts mode is $(stat -c %a "$HOSTS_FILE")"
+    [[ -r "$HOSTS_FILE" ]] || fail "root hosts file stayed unreadable"
+    ensure_hosts_short_name study >"${work}/root-again.out"
+    [[ ! -s "${work}/root-again.out" ]] || fail "second root hosts run changed a finished file"
+    [[ ! -e "${work}/.root-hosts.dotfiles-tmp" ]] || fail "root hosts write left a temp file"
 )
 
 echo ok

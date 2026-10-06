@@ -161,14 +161,31 @@ hosts_with_short_name() {
 ensure_hosts_short_name() {
     local short="$1"
     local file="${HOSTS_FILE:-/etc/hosts}"
-    local tmp staged
+    local tmp current staged
     [[ -f "$file" ]] || die "missing ${file}"
+    # mktemp is 0600, and cp keeps that mode. A root-owned 0600 hosts
+    # file cannot be read on the next run, so the installed mode is 0644.
+    current="$(mktemp)"
     tmp="$(mktemp)"
-    hosts_with_short_name "$short" "$file" >"$tmp"
-    if cmp -s "$file" "$tmp"; then
-        rm -f "$tmp"
+    if [[ -r "$file" ]]; then
+        cat "$file" >"$current"
+    else
+        sudo cat "$file" >"$current"
+    fi
+    hosts_with_short_name "$short" "$current" >"$tmp"
+    if cmp -s "$current" "$tmp"; then
+        rm -f "$tmp" "$current"
+        if [[ -r "$file" ]]; then
+            return 0
+        fi
+        log "hosts ${file} mode 0644"
+        if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+            return 0
+        fi
+        sudo chmod 0644 "$file"
         return 0
     fi
+    rm -f "$current"
     log "hosts ${file} short name ${short}"
     if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
         rm -f "$tmp"
@@ -178,10 +195,12 @@ ensure_hosts_short_name() {
     if [[ -w "$file" && -w "$(dirname "$file")" ]]; then
         rm -f "$staged"
         cp "$tmp" "$staged"
+        chmod 0644 "$staged"
         mv "$staged" "$file"
     else
         sudo rm -f "$staged"
         sudo cp "$tmp" "$staged"
+        sudo chmod 0644 "$staged"
         sudo mv "$staged" "$file"
     fi
     rm -f "$tmp"
