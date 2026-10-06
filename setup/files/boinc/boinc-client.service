@@ -14,9 +14,10 @@ Restart=on-failure
 RestartSec=10
 TimeoutStartSec=60
 WorkingDirectory=%h/.local/share/boinc
-# Mesa Rusticl hides radeonsi until this is set. Without it the client
-# loads libOpenCL and reports that no platform has a device.
-Environment=RUSTICL_ENABLE=radeonsi
+# Mesa Rusticl hides a driver until it is named here. radeonsi is Navi
+# (7900 XTX, 6500, 680M). r600 is the Caicos Radeon HD 7450. Without
+# the matching name the client loads libOpenCL and finds no device.
+Environment=RUSTICL_ENABLE=radeonsi,r600
 ExecStartPre=/usr/bin/mkdir -p %h/.local/share/boinc
 ExecStart=/usr/local/bin/boinc --dir %h/.local/share/boinc --allow_remote_gui_rpc
 ExecReload=/bin/kill -HUP $MAINPID
