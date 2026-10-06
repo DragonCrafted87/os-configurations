@@ -69,6 +69,37 @@ After the clone, SSH in and run the helper with no role argument:
 
 The helper execs this checkout's `role.sh`.
 
+## Hardware control
+
+From a workstation, walk the machines that already have a saved role.
+The inventory file is not in this public repo. Pass it with
+`--inventory`. `list` prints each section and does not open SSH.
+`dry-run` prints the two `git pull --ff-only` lines and runs
+`role.sh --dry-run`. `apply` runs `git pull --ff-only` in the
+`dot-files` and `machine-setup` checkouts when both are
+porcelain-clean, then runs `~/dot-files/setup/role.sh`. A dirty
+checkout stops that host. The controller does not pull a dirty tree,
+and it does not pass `--reset`.
+
+`ward-drake` stays on `role.sh --target`.
+
+```bash
+~/machine-setup/setup/control/fabric.py \
+  --inventory ~/git-workspace/homelab/control/inventory.conf \
+  list
+~/machine-setup/setup/control/fabric.py \
+  --inventory ~/git-workspace/homelab/control/inventory.conf \
+  dry-run --host roost-drake
+~/machine-setup/setup/control/fabric.py \
+  --inventory ~/git-workspace/homelab/control/inventory.conf \
+  apply --host roost-drake
+```
+
+The first run creates `~/.local/share/machine-setup/control-venv`
+and installs `fabric==3.2.3` there. When `python3 -m venv` cannot
+bootstrap pip, the controller uses `virtualenv`. The other machines
+do not install it.
+
 ## Reset without reinstalling
 
 `--reset` shows the removal preview, asks for approval, then asks about
