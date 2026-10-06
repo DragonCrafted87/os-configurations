@@ -354,8 +354,8 @@ version. The manager still needs the wxGTK 3.2 runtime libraries
 `lib64wx_gtk3u_core3.2_0`, `lib64wx_gtk3u_html3.2_0`,
 `lib64wx_gtk3u_webview3.2_0`). GPU detection needs Mesa Rusticl
 (`lib64RusticlOpenCL`), which provides `/etc/OpenCL/vendors/rusticl.icd`.
-The client unit sets `RUSTICL_ENABLE=radeonsi` so that platform exposes
-the AMD GPUs.
+The client unit sets `RUSTICL_ENABLE=radeonsi,r600` so that platform
+exposes Navi and the Caicos Radeon HD 7450.
 The compile needs `opencl-headers` and `lib64OpenCL-devel` so
 `libboinc_opencl` links `libOpenCL`. Reset removes the devel packages
 and Rusticl, and a matching version stamp skips the compile, so every
