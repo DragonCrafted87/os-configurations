@@ -1,0 +1,5 @@
+docs/plans/**
+docs/specs/**
+.kobold/bounds.local.yaml
+.kobold/trail.md
+.kobold/local/
