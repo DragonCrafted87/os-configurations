@@ -158,7 +158,7 @@ Edit `roles.conf` to change the module lists. `[common]` runs for
 | Role          | Extra modules                                                                                         |
 | ------------- | ----------------------------------------------------------------------------------------------------- |
 | `workstation` | Hyprland, desktop apps, Brave, VS Code, LibreOffice, CUPS, Steam, MakeMKV, KDE Connect, BOINC Manager |
-| `htpc`        | Hyprland, desktop apps, Brave, k3s, BOINC client. Couch build-out: `docs/htpc-role.md`                |
+| `htpc`        | Hyprland, desktop apps, Brave, k3s, BOINC client. Couch build-out: `../../docs/htpc-role.md`          |
 | `server`      | CLI baseline, k3s, BOINC client; no GUI session                                                       |
 | `haos`        | SSH keys and the short hostname on a Home Assistant OS appliance                                      |
 
