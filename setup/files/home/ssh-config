@@ -33,5 +33,13 @@ Host ward-drake
     User root
     Port 22222
 
+Host mist-dragon
+    HostName mist-dragon.stealthdragonland.net
+    User root
+
+Host beacon-dragon
+    HostName beacon-dragon.stealthdragonland.net
+    User root
+
 Host *.stealthdragonland.net
     User dragon

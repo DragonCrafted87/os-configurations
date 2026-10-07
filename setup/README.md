@@ -242,6 +242,24 @@ command. DNS for `ward-drake.stealthdragonland.net` stays on
 `--target`. `ssh ward-drake` uses `root` on port 22222 once the name
 resolves and `ssh-config` is the file the client is reading.
 
+## OpenWrt keys (mist-dragon, beacon-dragon)
+
+Dropbear on these boxes reads `/etc/dropbear/authorized_keys` for root.
+`~/.ssh/authorized_keys` is not that file. The updater is
+`setup/files/ssh/openwrt-sync-github-keys.sh`. It is `/bin/sh`. Copy it
+to `/usr/bin/openwrt-sync-github-keys.sh` and run it from root's crontab
+every twelve hours:
+
+```cron
+0 */12 * * * /usr/bin/openwrt-sync-github-keys.sh
+```
+
+A bad or empty fetch leaves the current file. A fetch that contains
+none of the keys already in the file also leaves it, so a router with
+password login off cannot lose its only key. The AP is an EnGenius
+EAP1300 on OpenWrt 22.03. It has `uclient-fetch` and no curl. The
+script tries `uclient-fetch`, then curl, then wget. No extra package.
+
 Copy secrets onto a new box without going through `init-remote.sh`:
 
 ```bash
