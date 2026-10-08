@@ -77,9 +77,11 @@ The inventory file is not in this public repo. Pass it with
 `dry-run` prints the two `git pull --ff-only` lines and runs
 `role.sh --dry-run`. `apply` runs `git pull --ff-only` in the
 `dot-files` and `machine-setup` checkouts when both are
-porcelain-clean, then runs `~/dot-files/setup/role.sh`. A dirty
-checkout stops that host. The controller does not pull a dirty tree,
-and it does not pass `--reset`.
+porcelain-clean, then runs `setup/role.sh` from the machine-setup
+path in `~/.config/dot-files/checkouts`. A dirty checkout stops
+that host. A missing `role.sh` stops that host and names the path.
+The controller does not pull a dirty tree, and it does not pass
+`--reset`.
 
 `ward-drake` stays on `role.sh --target`.
 

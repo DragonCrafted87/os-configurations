@@ -29,7 +29,7 @@ DOT = "/tmp/control-dots"
 SETUP = "/tmp/control-setup"
 PULL_DOT = f"git -C {DOT} pull --ff-only"
 PULL_SETUP = f"git -C {SETUP} pull --ff-only"
-ROLE = "~/dot-files/setup/role.sh"
+ROLE = f"{SETUP}/setup/role.sh"
 
 def clean(path):
     return mod.CheckoutFacts(path)
@@ -53,10 +53,10 @@ if dry.preview != [PULL_DOT, PULL_SETUP]:
 if any("pull" in command for command in dry.commands):
     raise SystemExit("dry-run would run a pull")
 
-def stops(facts_dot, facts_setup, helper_missing, needle):
+def stops(facts_dot, facts_setup, role_missing, needle):
     planned = mod.plan_actions(
         "apply",
-        mod.Probe(None, facts_dot, facts_setup, helper_missing),
+        mod.Probe(None, facts_dot, facts_setup, role_missing),
     )
     if planned.commands or planned.preview:
         raise SystemExit(f"planned work despite {needle}: {planned.commands}")

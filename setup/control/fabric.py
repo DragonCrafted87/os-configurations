@@ -16,7 +16,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-HELPER = "~/dot-files/setup/role.sh"
 CHECKOUTS = "~/.config/dot-files/checkouts"
 VENV = Path.home() / ".local" / "share" / "machine-setup" / "control-venv"
 
@@ -50,11 +49,11 @@ class CheckoutFacts:
 class Probe:
     """Facts collected for one host before any pull or role command."""
 
-    def __init__(self, error, dot, setup, helper_missing):
+    def __init__(self, error, dot, setup, role_missing):
         self.error = error
         self.dot = dot
         self.setup = setup
-        self.helper_missing = helper_missing
+        self.role_missing = role_missing
 
 
 class Actions:
@@ -111,6 +110,10 @@ def pull_command(path):
     return f"git -C {shlex.quote(path)} pull --ff-only"
 
 
+def role_script(setup_path):
+    return f"{setup_path}/setup/role.sh"
+
+
 def checkout_error(facts):
     if facts.missing:
         return f"missing {facts.path}"
@@ -131,13 +134,15 @@ def plan_actions(mode, probe):
         error = checkout_error(facts)
         if error:
             return Actions([], [], error)
-    if probe.helper_missing:
-        return Actions([], [], f"missing {HELPER}")
+    script = role_script(probe.setup.path)
+    if probe.role_missing:
+        return Actions([], [], f"missing {script}")
+    quoted = shlex.quote(script)
     preview = [pull_command(probe.dot.path), pull_command(probe.setup.path)]
     if mode == "dry-run":
-        return Actions(preview, [f"{HELPER} --dry-run"], None)
+        return Actions(preview, [f"{quoted} --dry-run"], None)
     if mode == "apply":
-        return Actions([], preview + [HELPER], None)
+        return Actions([], preview + [quoted], None)
     raise WalkError(f"unknown command {mode}")
 
 
@@ -193,12 +198,12 @@ def collect_probe(conn):
         dot_path, setup_path = parse_checkouts(listed.stdout or "")
     except WalkError as err:
         return Probe(str(err), None, None, True)
-    helper = _run(conn, f"test -f {HELPER}")
+    role = _run(conn, f"test -f {shlex.quote(role_script(setup_path))}")
     return Probe(
         None,
         probe_checkout(conn, dot_path),
         probe_checkout(conn, setup_path),
-        helper.exited != 0,
+        role.exited != 0,
     )
 
 
