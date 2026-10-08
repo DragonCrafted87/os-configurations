@@ -305,6 +305,29 @@ under `~/.cache/hyprland-source`. This module forces GCC 14 + libstdc++
 - mold (OpenMandriva cooker recipe; Clang 19 crashes Hyprland at
   launch). Other source builds still use `compiler.bashrc` clang.
 
+## Home Assistant notifications
+
+`install-ntfy-server` is on the haos role. It serves ntfy 2.29.0 on
+ward-drake, published at
+`http://ward-drake.stealthdragonland.net:2586`, topic `workstations`.
+Passwords are written once to `/mnt/data/ntfy/credentials` on that
+host. A later run reuses the bcrypt hashes already in `server.yml`
+and leaves the container up when that file is unchanged.
+
+`install-ntfy-subscribe` is on workstation. It installs the same ntfy
+client and enables `ntfy-workstations.service` on
+`workstation-session.target`. The unit starts when
+`~/.config/ntfy/client.yml` exists. That path is on the secrets list.
+The haos role writes it on the machine that runs `--target`. Copy it
+to the other workstation with `setup/utility/transfer-secrets.sh`.
+Each message is handed to `notify-send`, so mako shows it. The saved
+message id is where the next start continues, and the first start
+asks for the last 24 hours. The htpc role does not subscribe.
+
+Home Assistant publishes with `notify.send_message` on
+`notify.workstations`. The integration account is `homeassistant`.
+Desktops use the read-only `workstation` account.
+
 ## KDE Connect / GrapheneOS SMS
 
 `install-kdeconnect` is on workstation (and therefore laptop). It
