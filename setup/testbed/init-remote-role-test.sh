@@ -29,4 +29,17 @@ write_saved_role htpc
 [[ "$(tr -d '[:space:]' <"${HOME}/.config/dot-files/role")" == "htpc" ]] || fail "htpc did not replace the role"
 [[ "$(read_saved_role)" == "htpc" ]] || fail "read_saved_role did not return htpc"
 
+# ssh joins argv and the login shell parses that string. The same
+# join without %q is a syntax error at the function parentheses.
+remote_home="$(mktemp -d)"
+payload="$(remote_role_script server)"
+HOME="$remote_home" bash -c "bash -c $(printf '%q' "$payload")"
+[[ "$(tr -d '[:space:]' <"${remote_home}/.config/dot-files/role")" == "server" ]] \
+    || fail "quoted remote command did not write the role"
+rm -rf "$remote_home"
+
+grep -F 'remote bash -c "$(printf '\''%q'\'' "$(remote_role_script "$role")")"' \
+    "${HERE}/../init-remote.sh" >/dev/null \
+    || fail "record role does not quote the remote script"
+
 printf 'init-remote role file ok\n'
