@@ -75,6 +75,67 @@ printf 'dot-files=%s\nmachine-setup=%s\n' "$dots" "$setup" > ~/.config/dot-files
 EOF
 }
 
+# ssh forwards stdin. A while-read loop's stdin is the file it is
+# reading, so a remote command without -n consumes the rest of that
+# file. --stdin is the copy, which brings its own redirect. -t is the
+# sudo prompt, which needs the terminal.
+remote() {
+    local tty=()
+    local forward_stdin=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t)
+                tty=(-t)
+                shift
+                ;;
+            --stdin)
+                forward_stdin=1
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+    local n=()
+    if [[ "$forward_stdin" -eq 0 && ${#tty[@]} -eq 0 ]]; then
+        n=(-n)
+    fi
+    ssh "${n[@]}" "${tty[@]}" \
+        -o ControlMaster=auto \
+        -o ControlPath="$sock" \
+        -o ControlPersist=10m \
+        -o ForwardX11=no \
+        -o ForwardX11Trusted=no \
+        -o PreferredAuthentications=password,keyboard-interactive,publickey \
+        "$target" "$@"
+}
+
+copy_listed_secrets() {
+    local list="$1"
+    local target="$2"
+    local rel src remote_dir copied=0 skipped=0
+    if [[ -f "$list" ]]; then
+        while IFS= read -r rel || [[ -n "${rel:-}" ]]; do
+            [[ -z "$rel" || "$rel" == \#* ]] && continue
+            src="${HOME}/${rel}"
+            if [[ ! -e "$src" ]]; then
+                printf 'skip (missing): %s\n' "$src"
+                skipped=$((skipped + 1))
+                continue
+            fi
+            remote_dir="$(dirname "$rel")"
+            if [[ "$remote_dir" != "." ]]; then
+                remote "mkdir -p -- $(printf '%q' "$remote_dir")"
+            fi
+            printf 'copy %s -> %s:%s\n' "$src" "$target" "$rel"
+            remote --stdin "cat > $(printf '%q' "$rel")" <"$src"
+            copied=$((copied + 1))
+        done <"$list"
+    fi
+    printf '==> copied %s, skipped %s\n' "$copied" "$skipped"
+}
+
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
     return 0
 fi
@@ -120,22 +181,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-remote() {
-    local tty=()
-    if [[ "${1:-}" == "-t" ]]; then
-        tty=(-t)
-        shift
-    fi
-    ssh "${tty[@]}" \
-        -o ControlMaster=auto \
-        -o ControlPath="$sock" \
-        -o ControlPersist=10m \
-        -o ForwardX11=no \
-        -o ForwardX11Trusted=no \
-        -o PreferredAuthentications=password,keyboard-interactive,publickey \
-        "$target" "$@"
-}
-
 printf '==> open ssh master to %s (one password prompt)\n' "$target"
 ssh -fN \
     -o ControlMaster=yes \
@@ -170,27 +215,7 @@ if [[ -f "$repo_keys" ]]; then
 fi
 
 printf '==> copy secrets\n'
-copied=0
-skipped=0
-if [[ -f "$list" ]]; then
-    while IFS= read -r rel || [[ -n "${rel:-}" ]]; do
-        [[ -z "$rel" || "$rel" == \#* ]] && continue
-        src="${HOME}/${rel}"
-        if [[ ! -e "$src" ]]; then
-            printf 'skip (missing): %s\n' "$src"
-            skipped=$((skipped + 1))
-            continue
-        fi
-        remote_dir="$(dirname "$rel")"
-        if [[ "$remote_dir" != "." ]]; then
-            remote "mkdir -p -- ${remote_dir}"
-        fi
-        printf 'copy %s -> %s:%s\n' "$src" "$target" "$rel"
-        remote "cat > $(printf '%q' "$rel")" <"$src"
-        copied=$((copied + 1))
-    done <"$list"
-fi
-printf '==> copied %s, skipped %s\n' "$copied" "$skipped"
+copy_listed_secrets "$list" "$target"
 
 printf '==> bootstrap git on %s\n' "$target"
 remote -t 'sudo dnf install -y git curl'
