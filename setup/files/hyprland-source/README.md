@@ -15,6 +15,9 @@ use `compiler.bashrc` clang.
 Bump tags in `setup/versions.conf`. An already-exported env var still
 wins for a one-off (`HYPRLAND_TAG=v0.56.2`). The stamp file under
 `/usr/local/share/hyprland-source/` records the last successful set.
+hyprlauncher is not in that stamp. The module records `HYPRLAUNCHER_TAG`
+in `.hyprlauncher-stamp` and builds the launcher when that file does not
+match, including when the prefix stamp is already current.
 
 ## When the stack moves to `/usr`
 

@@ -28,6 +28,7 @@ HYPRLAND_GUIUTILS_TAG="${HYPRLAND_GUIUTILS_TAG:?set HYPRLAND_GUIUTILS_TAG in set
 HYPRLAND_PROTOCOLS_TAG="${HYPRLAND_PROTOCOLS_TAG:?set HYPRLAND_PROTOCOLS_TAG in setup/versions.conf}"
 HYPRLAND_QT_SUPPORT_TAG="${HYPRLAND_QT_SUPPORT_TAG:?set HYPRLAND_QT_SUPPORT_TAG in setup/versions.conf}"
 HYPRLANG_TAG="${HYPRLANG_TAG:?set HYPRLANG_TAG in setup/versions.conf}"
+HYPRLAUNCHER_TAG="${HYPRLAUNCHER_TAG:?set HYPRLAUNCHER_TAG in setup/versions.conf}"
 HYPRLOCK_TAG="${HYPRLOCK_TAG:?set HYPRLOCK_TAG in setup/versions.conf}"
 HYPRPAPER_TAG="${HYPRPAPER_TAG:?set HYPRPAPER_TAG in setup/versions.conf}"
 HYPRPICKER_TAG="${HYPRPICKER_TAG:?set HYPRPICKER_TAG in setup/versions.conf}"
@@ -49,6 +50,7 @@ RE2_TAG="${RE2_TAG:?set RE2_TAG in setup/versions.conf}"
 GLAZE_TAG="${GLAZE_TAG:?set GLAZE_TAG in setup/versions.conf}"
 HYPRCAPTURE_REV="${HYPRCAPTURE_REV:?set HYPRCAPTURE_REV in setup/versions.conf}"
 HYPRCAPTURE_STAMP="${PREFIX}/share/hyprland-source/.hyprcapture-stamp"
+HYPRLAUNCHER_STAMP="${PREFIX}/share/hyprland-source/.hyprlauncher-stamp"
 
 stamp_payload() {
     cat <<EOF
@@ -1058,7 +1060,7 @@ EOF
 
 install_prefix_desktops() {
     local name bin
-    for name in hyprsysteminfo hyprpwcenter; do
+    for name in hyprsysteminfo hyprpwcenter hyprlauncher; do
         bin="${PREFIX}/bin/${name}"
         if [[ ! -x "$bin" ]]; then
             log "skip desktop ${name}: ${bin} missing"
@@ -1066,6 +1068,48 @@ install_prefix_desktops() {
         fi
         install_user_desktop "${SETUP_FILES_DIR}/applications/${name}.desktop"
     done
+}
+
+ensure_hyprlauncher_deps() {
+    local pkgs=() picked group
+    local groups=("lib64qalculate-devel qalculate-devel libqalculate-devel")
+    for group in "${groups[@]}"; do
+        # shellcheck disable=SC2086
+        if picked="$(pick_pkg $group)"; then pkgs+=("$picked"); else warn "no package matched: $group"; fi
+    done
+    [[ "${#pkgs[@]}" -gt 0 ]] && ensure_packages "${pkgs[@]}"
+}
+
+write_hyprlauncher_stamp() {
+    [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]] && return 0
+    [[ -x "${PREFIX}/bin/hyprlauncher" ]] || return 0
+    sudo mkdir -p "$(dirname "$HYPRLAUNCHER_STAMP")"
+    printf '%s\n' "$HYPRLAUNCHER_TAG" | sudo tee "$HYPRLAUNCHER_STAMP" >/dev/null
+}
+
+# Own stamp, like HyprCapture. A matching prefix stamp still installs this.
+ensure_hyprlauncher() {
+    local current=""
+    should_build_component hyprlauncher || return 0
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        log "would build hyprlauncher ${HYPRLAUNCHER_TAG} into ${PREFIX}"
+        return 0
+    fi
+    if [[ -f "$HYPRLAUNCHER_STAMP" ]]; then
+        current="$(cat "$HYPRLAUNCHER_STAMP")"
+    fi
+    if [[ "${HYPRLAND_SOURCE_FORCE:-0}" != "1" && -x "${PREFIX}/bin/hyprlauncher" && "$current" == "$HYPRLAUNCHER_TAG" ]]; then
+        log "hyprlauncher ${HYPRLAUNCHER_TAG} already installed"
+        return 0
+    fi
+    ensure_hyprlauncher_deps
+    export_prefix_env
+    if [[ -e "${PREFIX}/bin/hyprlauncher" ]]; then
+        log "remove ${PREFIX}/bin/hyprlauncher before rebuild"
+        sudo rm -f "${PREFIX}/bin/hyprlauncher"
+    fi
+    build_prefixed_bin hyprlauncher https://github.com/hyprwm/hyprlauncher.git "${SRC_ROOT}/hyprlauncher" "$HYPRLAUNCHER_TAG" hyprlauncher
+    write_hyprlauncher_stamp
 }
 
 # Dropping hyprlauncher from the stamp must not rebuild the rest of the prefix.
@@ -1268,6 +1312,7 @@ if [[ -x "${PREFIX}/bin/Hyprland" && -f "$STAMP" ]] && [[ "$(cat "$STAMP")" == "
     log "Hyprland ${HYPRLAND_SOURCE_VERSION} prefix already current at ${PREFIX}"
     ensure_xkb_data
     install_session_files
+    ensure_hyprlauncher
     install_prefix_desktops
     ensure_hyprcapture
     relocate_prefix_user_units
@@ -1278,8 +1323,13 @@ fi
 
 install_build_deps
 if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
-    log "would build Hyprland ${HYPRLAND_TAG} and ecosystem into ${PREFIX}"
+    if [[ -n "${HYPRLAND_SOURCE_ONLY:-}" ]]; then
+        log "would build ${HYPRLAND_SOURCE_ONLY} into ${PREFIX}"
+    else
+        log "would build Hyprland ${HYPRLAND_TAG} and ecosystem into ${PREFIX}"
+    fi
     install_session_files
+    ensure_hyprlauncher
     install_prefix_desktops
     ensure_hyprcapture
     relocate_prefix_user_units
@@ -1297,6 +1347,7 @@ command -v make >/dev/null 2>&1 || die "make is not on PATH after package instal
 
 build_stack
 install_session_files
+ensure_hyprlauncher
 install_prefix_desktops
 ensure_hyprcapture
 relocate_prefix_user_units

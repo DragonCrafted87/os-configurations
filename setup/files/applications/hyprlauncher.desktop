@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Hyprlauncher
+GenericName=Application Launcher
+Comment=Hyprland launcher built with hyprtoolkit
+TryExec=/usr/local/bin/hyprlauncher
+Exec=/usr/local/bin/hyprlauncher --toggle
+Icon=system-search
+Terminal=false
+StartupNotify=false
+Categories=Utility;
+Keywords=hyprlauncher;launcher;search;
+X-DotFiles=1

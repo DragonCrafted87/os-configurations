@@ -1,0 +1,15 @@
+[Unit]
+Description=Hyprlauncher
+PartOf=graphical-session.target
+After=hyprland-session.service
+ConditionPathExists=/usr/local/bin/hyprlauncher
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hyprlauncher -d
+Restart=on-failure
+RestartSec=2
+Slice=session.slice
+
+[Install]
+WantedBy=graphical-session.target
