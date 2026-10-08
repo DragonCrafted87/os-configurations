@@ -1,0 +1,176 @@
+#include "logic.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+
+namespace {
+
+std::optional<double> field_number(const std::string& object, const std::string& key) {
+    const std::string pattern = "\"" + key + "\"";
+    const auto        at      = object.find(pattern);
+    if (at == std::string::npos)
+        return std::nullopt;
+    auto colon = object.find(':', at + pattern.size());
+    if (colon == std::string::npos)
+        return std::nullopt;
+    size_t i = colon + 1;
+    while (i < object.size() && std::isspace(static_cast<unsigned char>(object[i])))
+        ++i;
+    try {
+        size_t used = 0;
+        double value = std::stod(object.substr(i), &used);
+        if (used == 0)
+            return std::nullopt;
+        return value;
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+bool field_bool(const std::string& object, const std::string& key) {
+    const std::string pattern = "\"" + key + "\"";
+    const auto        at      = object.find(pattern);
+    if (at == std::string::npos)
+        return false;
+    auto colon = object.find(':', at + pattern.size());
+    if (colon == std::string::npos)
+        return false;
+    size_t i = colon + 1;
+    while (i < object.size() && std::isspace(static_cast<unsigned char>(object[i])))
+        ++i;
+    return object.compare(i, 4, "true") == 0;
+}
+
+std::vector<std::string> top_objects(const std::string& json) {
+    std::vector<std::string> objects;
+    int                      depth      = 0;
+    int                      obj_depth  = 0;
+    size_t                   start      = 0;
+    bool                     in_string  = false;
+    bool                     escape     = false;
+    for (size_t i = 0; i < json.size(); ++i) {
+        const char c = json[i];
+        if (in_string) {
+            if (escape)
+                escape = false;
+            else if (c == '\\')
+                escape = true;
+            else if (c == '"')
+                in_string = false;
+            continue;
+        }
+        if (c == '"') {
+            in_string = true;
+            continue;
+        }
+        if (c == '{' || c == '[') {
+            if (c == '{' && depth == 1) {
+                start     = i;
+                obj_depth = 1;
+            } else if (c == '{' && obj_depth > 0) {
+                ++obj_depth;
+            }
+            ++depth;
+            continue;
+        }
+        if (c == '}' || c == ']') {
+            if (c == '}' && obj_depth > 0) {
+                --obj_depth;
+                if (obj_depth == 0)
+                    objects.emplace_back(json.substr(start, i - start + 1));
+            }
+            if (depth > 0)
+                --depth;
+        }
+    }
+    return objects;
+}
+
+} // namespace
+
+int menu_width_for(int monitor_w) {
+    const int scaled = static_cast<int>(std::lround(monitor_w * 0.22));
+    return std::max(380, std::min(460, scaled));
+}
+
+bool parse_cursor_pos(const std::string& line, int& x, int& y) {
+    auto comma = line.find(',');
+    if (comma == std::string::npos)
+        return false;
+    try {
+        x = std::stoi(line.substr(0, comma));
+        y = std::stoi(line.substr(comma + 1));
+    } catch (const std::exception&) {
+        return false;
+    }
+    return true;
+}
+
+std::vector<Monitor> parse_monitors(const std::string& json) {
+    std::vector<Monitor> monitors;
+    for (const auto& object : top_objects(json)) {
+        Monitor monitor;
+        if (auto value = field_number(object, "x"))
+            monitor.x = static_cast<int>(*value);
+        if (auto value = field_number(object, "y"))
+            monitor.y = static_cast<int>(*value);
+        if (auto value = field_number(object, "width"))
+            monitor.width = static_cast<int>(*value);
+        if (auto value = field_number(object, "height"))
+            monitor.height = static_cast<int>(*value);
+        monitor.focused = field_bool(object, "focused");
+        auto workspace   = object.find("\"activeWorkspace\"");
+        if (workspace != std::string::npos) {
+            if (auto id = field_number(object.substr(workspace), "id"))
+                monitor.workspace = static_cast<int>(*id);
+        }
+        if (monitor.width <= 0)
+            monitor.width = 1920;
+        if (monitor.height <= 0)
+            monitor.height = 1080;
+        monitors.push_back(monitor);
+    }
+    return monitors;
+}
+
+Placement place_menu(int cursor_x, int cursor_y, const std::vector<Monitor>& monitors, int menu_h) {
+    Placement place;
+    place.menu_h = std::max(280, menu_h);
+    const Monitor* monitor = nullptr;
+    for (const auto& candidate : monitors) {
+        if (candidate.focused) {
+            monitor = &candidate;
+            break;
+        }
+    }
+    if (!monitor && !monitors.empty())
+        monitor = &monitors.front();
+    if (!monitor)
+        return place;
+
+    place.monitor_w = monitor->width;
+    place.monitor_h = monitor->height;
+    place.workspace = monitor->workspace > 0 ? monitor->workspace : 1;
+    place.menu_w    = menu_width_for(monitor->width);
+    place.menu_h    = std::max(280, std::min(std::max(280, monitor->height - 16), place.menu_h));
+
+    int left = cursor_x - monitor->x;
+    int top  = cursor_y - monitor->y;
+    if (left + place.menu_w > monitor->width)
+        left = std::max(8, monitor->width - place.menu_w - 8);
+    if (top + place.menu_h > monitor->height)
+        top = std::max(8, monitor->height - place.menu_h - 8);
+    if (left < 0)
+        left = 8;
+    if (top < 0)
+        top = 8;
+    place.menu_left = left;
+    place.menu_top  = top;
+    place.flyout_on_left = (left + place.menu_w + place.flyout_gap + place.flyout_w) > (monitor->width - 8);
+    if (place.flyout_on_left)
+        place.flyout_left = std::max(8, left - place.flyout_w - place.flyout_gap);
+    else
+        place.flyout_left = left + place.menu_w + place.flyout_gap;
+    return place;
+}

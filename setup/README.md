@@ -285,6 +285,9 @@ Ly session name is **Hyprland**, with
 `/usr/share/wayland-sessions/hyprland.desktop`.
 `hypridle`, `hyprpolkitagent`, the Hyprland portal, `hyprsunset`, and
 `hyprpaper` exec `/usr/local`. hyprpwcenter is the volume UI.
+hyprdesk is the start menu and volume OSD, on its own `.hyprdesk-stamp`,
+so installing it does not rebuild the prefix. `config/hypr/conf.d/shell.conf`
+decides whether the session starts it.
 
 OpenMandriva has no single published dep list. The module translates the
 Fedora set from [Hyprland discussion #284](https://github.com/hyprwm/Hyprland/discussions/284)

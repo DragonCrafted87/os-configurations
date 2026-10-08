@@ -49,6 +49,8 @@ RE2_TAG="${RE2_TAG:?set RE2_TAG in setup/versions.conf}"
 GLAZE_TAG="${GLAZE_TAG:?set GLAZE_TAG in setup/versions.conf}"
 HYPRCAPTURE_REV="${HYPRCAPTURE_REV:?set HYPRCAPTURE_REV in setup/versions.conf}"
 HYPRCAPTURE_STAMP="${PREFIX}/share/hyprland-source/.hyprcapture-stamp"
+HYPRDESK_REV="${HYPRDESK_REV:?set HYPRDESK_REV in setup/versions.conf}"
+HYPRDESK_STAMP="${PREFIX}/share/hyprland-source/.hyprdesk-stamp"
 
 stamp_payload() {
     cat <<EOF
@@ -1058,7 +1060,7 @@ EOF
 
 install_prefix_desktops() {
     local name bin
-    for name in hyprsysteminfo hyprpwcenter; do
+    for name in hyprsysteminfo hyprpwcenter hyprdesk; do
         bin="${PREFIX}/bin/${name}"
         if [[ ! -x "$bin" ]]; then
             log "skip desktop ${name}: ${bin} missing"
@@ -1066,6 +1068,48 @@ install_prefix_desktops() {
         fi
         install_user_desktop "${SETUP_FILES_DIR}/applications/${name}.desktop"
     done
+}
+
+ensure_hyprdesk_deps() {
+    local pkgs=() picked group
+    local groups=("lib64systemd-devel systemd-devel")
+    for group in "${groups[@]}"; do
+        # shellcheck disable=SC2086
+        if picked="$(pick_pkg $group)"; then pkgs+=("$picked"); else warn "no package matched: $group"; fi
+    done
+    [[ "${#pkgs[@]}" -gt 0 ]] && ensure_packages "${pkgs[@]}"
+}
+
+write_hyprdesk_stamp() {
+    [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]] && return 0
+    [[ -x "${PREFIX}/bin/hyprdesk" ]] || return 0
+    sudo mkdir -p "$(dirname "$HYPRDESK_STAMP")"
+    printf '%s\n' "$HYPRDESK_REV" | sudo tee "$HYPRDESK_STAMP" >/dev/null
+}
+
+# Own stamp. A matching prefix stamp still installs the desk app.
+ensure_hyprdesk() {
+    local src="${SRC_ROOT}/hyprdesk"
+    should_build_component hyprdesk || return 0
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        log "would build hyprdesk ${HYPRDESK_REV} into ${PREFIX}"
+        return 0
+    fi
+    if [[ "${HYPRLAND_SOURCE_FORCE:-0}" != "1" && -x "${PREFIX}/bin/hyprdesk" && -f "$HYPRDESK_STAMP" && "$(cat "$HYPRDESK_STAMP")" == "$HYPRDESK_REV" ]]; then
+        log "hyprdesk ${HYPRDESK_REV} already installed"
+        return 0
+    fi
+    ensure_hyprdesk_deps
+    export_prefix_env
+    if [[ -e "${PREFIX}/bin/hyprdesk" ]]; then
+        log "remove ${PREFIX}/bin/hyprdesk before rebuild"
+        sudo rm -f "${PREFIX}/bin/hyprdesk"
+    fi
+    rm -rf "$src"
+    mkdir -p "$src"
+    cp -a "${SETUP_FILES_DIR}/hyprdesk/." "$src/"
+    build_cmake_src "$src"
+    write_hyprdesk_stamp
 }
 
 # Dropping hyprlauncher from the stamp must not rebuild the rest of the prefix.
@@ -1268,6 +1312,7 @@ if [[ -x "${PREFIX}/bin/Hyprland" && -f "$STAMP" ]] && [[ "$(cat "$STAMP")" == "
     log "Hyprland ${HYPRLAND_SOURCE_VERSION} prefix already current at ${PREFIX}"
     ensure_xkb_data
     install_session_files
+    ensure_hyprdesk
     install_prefix_desktops
     ensure_hyprcapture
     relocate_prefix_user_units
@@ -1278,8 +1323,13 @@ fi
 
 install_build_deps
 if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
-    log "would build Hyprland ${HYPRLAND_TAG} and ecosystem into ${PREFIX}"
+    if [[ -n "${HYPRLAND_SOURCE_ONLY:-}" ]]; then
+        log "would build ${HYPRLAND_SOURCE_ONLY} into ${PREFIX}"
+    else
+        log "would build Hyprland ${HYPRLAND_TAG} and ecosystem into ${PREFIX}"
+    fi
     install_session_files
+    ensure_hyprdesk
     install_prefix_desktops
     ensure_hyprcapture
     relocate_prefix_user_units
@@ -1297,6 +1347,7 @@ command -v make >/dev/null 2>&1 || die "make is not on PATH after package instal
 
 build_stack
 install_session_files
+ensure_hyprdesk
 install_prefix_desktops
 ensure_hyprcapture
 relocate_prefix_user_units

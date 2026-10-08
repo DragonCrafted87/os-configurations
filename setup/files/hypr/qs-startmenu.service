@@ -11,3 +11,6 @@ ExecStart=%h/.config/hypr/scripts/startmenu.sh
 Restart=always
 RestartSec=2
 Slice=session.slice
+
+[Install]
+WantedBy=workstation-session.target

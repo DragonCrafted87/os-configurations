@@ -46,3 +46,23 @@ case "$role" in
         disable_user_service htpc-session.target
         ;;
 esac
+
+# Desk chrome. The file in the dot-files tree is the source of truth.
+# A missing or unknown value stays on Quickshell.
+desk_shell_file="${CONFIG_SOURCE_DIR}/hypr/conf.d/shell.conf"
+desk_shell="quickshell"
+if [[ -f "$desk_shell_file" ]]; then
+    desk_shell="$(
+        grep -E '^DESK_SHELL=' "$desk_shell_file" | tail -n 1 | cut -d= -f2- | tr -d '[:space:]' || true
+    )"
+fi
+case "$desk_shell" in
+    hyprtoolkit)
+        disable_user_service qs-startmenu.service
+        enable_user_service hyprdesk.service
+        ;;
+    *)
+        enable_user_service qs-startmenu.service
+        disable_user_service hyprdesk.service
+        ;;
+esac
