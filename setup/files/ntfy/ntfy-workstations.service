@@ -1,0 +1,15 @@
+[Unit]
+Description=Home Assistant ntfy notifications
+PartOf=workstation-session.target
+After=mako.service
+ConditionPathExists=%h/.config/ntfy/client.yml
+
+[Service]
+Type=simple
+ExecStart=%h/bin/ntfy-workstations
+Restart=on-failure
+RestartSec=5
+Slice=session.slice
+
+[Install]
+WantedBy=workstation-session.target

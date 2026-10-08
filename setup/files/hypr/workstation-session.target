@@ -10,6 +10,7 @@ Wants=workstation-discord.service
 Wants=qs-startmenu.service
 Wants=workstation-litra.service
 Wants=workstation-kdeconnect.service
+Wants=ntfy-workstations.service
 
 [Install]
 WantedBy=graphical-session.target

@@ -18,8 +18,8 @@ export CONFIG_TARGET_DIR="${work}/config"
 . "${repo}/setup/lib/lib.sh"
 
 haos_list="$(role_modules haos)"
-[[ "$haos_list" == "configure-haos" ]] || {
-    printf 'expected only configure-haos, got:\n%s\n' "$haos_list" >&2
+[[ "$haos_list" == $'configure-haos\ninstall-ntfy-server' ]] || {
+    printf 'expected configure-haos and install-ntfy-server, got:\n%s\n' "$haos_list" >&2
     exit 1
 }
 
@@ -32,6 +32,15 @@ grep -qx 'configure-laptop' <<<"$workstation_list" || {
     printf 'workstation lost the saved laptop subrole:\n%s\n' "$workstation_list" >&2
     exit 1
 }
+grep -qx 'install-ntfy-subscribe' <<<"$workstation_list" || {
+    printf 'workstation is not subscribed to ntfy:\n%s\n' "$workstation_list" >&2
+    exit 1
+}
+htpc_list="$(role_modules htpc)"
+if grep -qx 'install-ntfy-subscribe' <<<"$htpc_list"; then
+    printf 'htpc subscribed to ntfy\n' >&2
+    exit 1
+fi
 
 printf 'haos role list ok\n'
 
