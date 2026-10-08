@@ -21,6 +21,14 @@ write_saved_role() {
     printf '%s\n' "$role" >"$path"
 }
 
+# ssh joins this into one login-shell command. An unquoted function
+# is word-split there, and the parentheses are a syntax error.
+remote_role_script() {
+    local role="$1"
+    declare -f write_saved_role
+    printf 'write_saved_role %q\n' "$role"
+}
+
 # Commands run on the new machine after its SSH key can clone.
 # A submodule checkout has a .git file, so this uses git -C rather than
 # a test that the .git entry is a directory.
@@ -205,4 +213,4 @@ printf '==> clone checkouts for %s\n' "$role"
 remote bash -c "$(printf '%q' "$(remote_checkout_script "$role")")"
 
 printf '==> record role %s\n' "$role"
-remote bash -c "$(declare -f write_saved_role; printf 'write_saved_role %q\n' "$role")"
+remote bash -c "$(printf '%q' "$(remote_role_script "$role")")"
