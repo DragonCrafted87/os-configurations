@@ -3,4 +3,8 @@
 bash
 curl
 git
+# git-core is the payload. diffutils is a Requires of git-core.
+# dnf remove of either one removes the git package too.
+git-core
+diffutils
 openssh*
