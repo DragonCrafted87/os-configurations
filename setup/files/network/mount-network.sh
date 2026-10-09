@@ -18,6 +18,16 @@ is_mounted() {
     findmnt -n "$target" >/dev/null 2>&1
 }
 
+# True when target is mounted from host:/export.
+nfs_mounted_from() {
+    local target="$1"
+    local source="$2"
+    local current
+    is_mounted "$target" || return 1
+    current="$(findmnt -n -o SOURCE -- "$target" 2>/dev/null || true)"
+    [[ "$current" == "$source" ]]
+}
+
 unmount_one() {
     local target="$1"
 
@@ -203,11 +213,12 @@ retire_legacy_cifs_dir "${MOUNTPOINT}/Storage"
 retire_legacy_cifs_dir "${MOUNTPOINT}/Unrestricted"
 retire_legacy_cifs_dir "${MOUNTPOINT}/Backups"
 retire_legacy_cifs_dir "${MOUNTPOINT}/${RCLONE_SHARE}"
+retire_legacy_cifs_dir "${MOUNTPOINT}/castellan-data"
 mkdir -p "${MOUNTPOINT}/${RCLONE_LOCAL}" \
     "${MOUNTPOINT}/storage" \
     "${MOUNTPOINT}/unrestricted" \
     "${MOUNTPOINT}/backups" \
-    "${MOUNTPOINT}/castellan-data"
+    "${MOUNTPOINT}/hoard-data"
 
 if is_mounted "${MOUNTPOINT}/${RCLONE_SHARE}"; then
     log "warning: leftover ${MOUNTPOINT}/${RCLONE_SHARE} still mounted, skip rclone"
@@ -218,19 +229,27 @@ mount_cifs //calligraphy-wyrm.stealthdragonland.net/Storage      "${MOUNTPOINT}/
 mount_cifs //calligraphy-wyrm.stealthdragonland.net/Unrestricted "${MOUNTPOINT}/unrestricted"
 mount_cifs //calligraphy-wyrm.stealthdragonland.net/Backups      "${MOUNTPOINT}/backups"
 
-if is_mounted "${MOUNTPOINT}/castellan-data"; then
-    log "already mounted: ${MOUNTPOINT}/castellan-data"
+nfs_source="hoard-drake.stealthdragonland.net:/srv/data"
+nfs_dir="${MOUNTPOINT}/hoard-data"
+if nfs_mounted_from "$nfs_dir" "$nfs_source"; then
+    log "already mounted: ${nfs_dir}"
 else
-    if wait_for_host_port castellan.stealthdragonland.net 2049; then
-        log "mounting NFS castellan:/srv/data -> ${MOUNTPOINT}/castellan-data"
+    if is_mounted "$nfs_dir"; then
+        log "unmounting ${nfs_dir}"
+        unmount_one "$nfs_dir" || log "failed: could not unmount ${nfs_dir}"
+    fi
+    if is_mounted "$nfs_dir"; then
+        log "failed: hoard-data (still mounted from another source)"
+    elif wait_for_host_port hoard-drake.stealthdragonland.net 2049; then
+        log "mounting NFS ${nfs_source} -> ${nfs_dir}"
         if sudo mount -t nfs -o nolock,vers=4,soft,timeo=10,retrans=3 \
-            castellan.stealthdragonland.net:/srv/data "${MOUNTPOINT}/castellan-data"; then
-            log "success: castellan-data (NFS)"
+            "$nfs_source" "$nfs_dir"; then
+            log "success: hoard-data (NFS)"
         else
-            log "failed: castellan-data (NFS)"
+            log "failed: hoard-data (NFS)"
         fi
     else
-        log "failed: castellan-data (NFS host not ready)"
+        log "failed: hoard-data (NFS host not ready)"
     fi
 fi
 
