@@ -169,6 +169,15 @@ Edit `roles.conf` to change the module lists. `[common]` runs for
 
 `enable-subrole laptop` adds `configure-laptop` (power-profiles-daemon).
 
+`enable-subrole nfs-server` installs the NFS server, creates `/srv/data`,
+and exports that path to `192.168.0.0/20` (`255.255.240.0`) with
+`rw,no_root_squash,no_subtree_check`. The line lives in
+`setup/files/network/nfs-server.exports`. A later run rewrites
+`/etc/exports.d/dot-files.exports` when the file drifts. The module
+does not partition a disk or copy data onto `/srv/data`. When firewalld
+is already running it allows the `nfs`, `mountd`, and `rpc-bind`
+services. It does not install or start firewalld.
+
 Dolphin is the Hyprland file manager (`SUPER+E`). After
 `remove-plasma-sddm` strips Plasma, it has no KService/MIME map unless
 `install-desktop-packages` installs `plasma6-dolphin` plus KIO extras and
