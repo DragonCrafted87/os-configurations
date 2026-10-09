@@ -43,7 +43,10 @@ and sshd:
 
 1. Installs this computer's SSH public keys on the new box
 1. Copies the secrets list onto the new box
-1. Installs `git` and `curl` on the new box
+1. Installs `git` and `curl` on the new box, and writes
+   `/etc/sudoers.d/<user>` with `NOPASSWD: ALL` for that user. The
+   reset install boot has no terminal, so that drop-in is what later
+   `sudo` calls use.
 1. Generates `~/.ssh/id_ed25519` on the new box if it is missing
 1. Prints the public key and registers it with GitHub using `gh` on
    this computer

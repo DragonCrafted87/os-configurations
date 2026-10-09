@@ -75,6 +75,17 @@ def run_out(cmd: list[str]) -> str:
     return result.stdout
 
 
+def removals_outside(installed: list[str], keep: set[str]) -> list[str]:
+    to_remove: list[str] = []
+    for pkg in installed:
+        if pkg in keep:
+            continue
+        if any(pkg.startswith(prefix) for prefix in ALWAYS_KEEP_PREFIXES):
+            continue
+        to_remove.append(pkg)
+    return to_remove
+
+
 def installed_rpms() -> list[str]:
     text = run_out(["rpm", "-qa", "--qf", "%{name}\n"])
     return sorted({line.strip() for line in text.splitlines() if line.strip()})
@@ -168,13 +179,7 @@ def main() -> int:
             f"check {iso_file} and {never_file}"
         )
 
-    to_remove: list[str] = []
-    for pkg in installed_rpms():
-        if pkg in keep:
-            continue
-        if any(pkg.startswith(prefix) for prefix in ALWAYS_KEEP_PREFIXES):
-            continue
-        to_remove.append(pkg)
+    to_remove = removals_outside(installed_rpms(), keep)
 
     if not to_remove:
         log("already at baseline; nothing to remove")

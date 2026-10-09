@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Run from a working computer. Opens one SSH master, copies secrets,
-# generates a key on the new box, registers that key with the local gh
-# session, clones both checkouts, and writes ~/.config/dot-files/role.
-# It does not apply the role.
+# installs git and curl, writes a passwordless sudoers drop-in for the
+# remote user, generates a key on the new box, registers that key with
+# the local gh session, clones both checkouts, and writes
+# ~/.config/dot-files/role. It does not apply the role.
 #
 #   ./setup/init-remote.sh dragon@newbox.lan workstation
 
@@ -136,6 +137,30 @@ copy_listed_secrets() {
     printf '==> copied %s, skipped %s\n' "$copied" "$skipped"
 }
 
+# Root script for the one sudo password prompt. The drop-in has to be
+# on disk before a reset: the install boot has no terminal, and the
+# prune removes packages init-remote added.
+remote_bootstrap_script() {
+    local user="$1"
+    local line dest
+    if [[ ! "$user" =~ ^[A-Za-z_][-A-Za-z0-9_]*$ ]]; then
+        printf 'error: remote user %s is not a sudoers name\n' "$user" >&2
+        return 1
+    fi
+    line="${user} ALL=(ALL) NOPASSWD: ALL"
+    dest="/etc/sudoers.d/${user}"
+    cat <<EOF
+set -euo pipefail
+tmp=\$(mktemp)
+printf '%s\\n' $(printf '%q' "$line") >"\$tmp"
+chmod 440 "\$tmp"
+visudo -cf "\$tmp"
+install -m 0440 "\$tmp" $(printf '%q' "$dest")
+rm -f "\$tmp"
+dnf install -y git curl
+EOF
+}
+
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
     return 0
 fi
@@ -217,8 +242,9 @@ fi
 printf '==> copy secrets\n'
 copy_listed_secrets "$list" "$target"
 
-printf '==> bootstrap git on %s\n' "$target"
-remote -t 'sudo dnf install -y git curl'
+remote_user="${target%%@*}"
+printf '==> bootstrap git and passwordless sudo for %s\n' "$remote_user"
+remote -t "sudo bash -c $(printf '%q' "$(remote_bootstrap_script "$remote_user")")"
 remote 'mkdir -p ~/.ssh && chmod 700 ~/.ssh'
 remote 'if [[ ! -f ~/.ssh/id_ed25519 ]]; then ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C "$(id -un)@$(hostname -s)" -N ""; chmod 600 ~/.ssh/id_ed25519; chmod 644 ~/.ssh/id_ed25519.pub; fi'
 
