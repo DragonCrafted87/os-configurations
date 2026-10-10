@@ -157,6 +157,8 @@ SETUP_FILES_DIR="${SETUP_FILES_DIR:-${SETUP_DIR}/files}"
 SETUP_VERSIONS_FILE="${SETUP_VERSIONS_FILE:-${SETUP_DIR}/versions.conf}"
 COMPILER_ENV_FILE="${DOTFILES_ROOT}/bashrc.d/compiler.bashrc"
 # Cross-module flags belong in /tmp, not ~/.config/dot-files.
+DOTFILES_DESK_RESTART_FLAG="${DOTFILES_DESK_RESTART_FLAG:-/tmp/dot-files-$(id -u)-need-desk-restart}"
+# A restart flagged before the rename still uses this path.
 DOTFILES_QS_RESTART_FLAG="${DOTFILES_QS_RESTART_FLAG:-/tmp/dot-files-$(id -u)-need-qs-restart}"
 
 _dotfiles_source() {

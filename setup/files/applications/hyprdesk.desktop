@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Hyprdesk
+GenericName=Desk menu
+Comment=Hyprland start menu and volume OSD
+TryExec=/usr/local/bin/hyprdesk
+Exec=/usr/local/bin/hyprdesk --toggle
+Icon=start-here
+Terminal=false
+StartupNotify=false
+Categories=Utility;
+Keywords=hyprdesk;menu;launcher;volume;
+X-DotFiles=1

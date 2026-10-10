@@ -22,6 +22,7 @@ ensure_packages \
     qqc2-desktop-style \
     kf6-qqc2-desktop-style \
     lib64Qt6Multimedia \
+    lib64KF6ConfigQml \
     kirigami-addons
 
 install_android_udev() {

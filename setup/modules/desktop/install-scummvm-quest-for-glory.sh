@@ -258,9 +258,6 @@ refresh_desktop_cache() {
     if command -v xdg-desktop-menu >/dev/null 2>&1; then
         xdg-desktop-menu forceupdate >/dev/null 2>&1 || true
     fi
-    if command -v qs >/dev/null 2>&1; then
-        qs ipc call startmenu reload >/dev/null 2>&1 || true
-    fi
 }
 
 ensure_packages scummvm rsync curl desktop-file-utils

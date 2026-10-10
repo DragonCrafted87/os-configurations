@@ -2,12 +2,12 @@
 # Sourced by setup/lib/lib.sh. Not an entry point.
 
 # Modules run in a subprocess, so a restart request has to survive on disk.
-request_qs_restart() {
+request_desk_restart() {
     if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
-        log "dry-run: would flag qs restart (${DOTFILES_QS_RESTART_FLAG})"
+        log "dry-run: would flag hyprdesk restart (${DOTFILES_DESK_RESTART_FLAG})"
         return 0
     fi
-    printf '1\n' >"$DOTFILES_QS_RESTART_FLAG"
+    printf '1\n' >"$DOTFILES_DESK_RESTART_FLAG"
 }
 
 # XDG desktop dir, falling back to ~/desktop when xdg-user-dir is missing
@@ -25,7 +25,7 @@ resolve_desktop_dir() {
 }
 
 # Install a .desktop into ~/.local/share/applications and ~/desktop.
-# Marks qs for restart when the start menu needs to reread launchers.
+# Marks hyprdesk for restart when the start menu needs to reread launchers.
 install_user_desktop() {
     local src="$1"
     local name
@@ -61,42 +61,39 @@ install_user_desktop() {
                 xdg-desktop-menu forceupdate >/dev/null 2>&1 || true
             fi
         fi
-        request_qs_restart
+        request_desk_restart
     fi
 }
 
-restart_qs_if_needed() {
-    local starter="${CONFIG_TARGET_DIR}/hypr/scripts/startmenu.sh"
-
-    if [[ ! -f "$DOTFILES_QS_RESTART_FLAG" ]]; then
+restart_desk_if_needed() {
+    if [[ ! -f "$DOTFILES_DESK_RESTART_FLAG" && ! -f "$DOTFILES_QS_RESTART_FLAG" ]]; then
         return 0
     fi
 
     if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
-        log "dry-run: would restart qs startmenu"
+        log "dry-run: would restart hyprdesk"
         return 0
     fi
 
-    rm -f "$DOTFILES_QS_RESTART_FLAG"
+    rm -f "$DOTFILES_DESK_RESTART_FLAG" "$DOTFILES_QS_RESTART_FLAG"
 
     if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && ! pgrep -x Hyprland >/dev/null 2>&1; then
-        log "skip qs restart: no Hyprland session"
+        log "skip hyprdesk restart: no Hyprland session"
         return 0
     fi
 
-    if systemctl --user is-enabled --quiet qs-startmenu.service 2>/dev/null; then
-        log "restart qs startmenu"
-        run systemctl --user restart qs-startmenu.service
+    if ! [[ -x /usr/local/bin/hyprdesk ]]; then
+        warn "skip hyprdesk restart: missing /usr/local/bin/hyprdesk"
         return 0
     fi
 
-    if [[ ! -x "$starter" ]]; then
-        warn "skip qs restart: missing ${starter}"
+    if systemctl --user is-active --quiet hyprdesk.service 2>/dev/null \
+        || systemctl --user is-enabled --quiet hyprdesk.service 2>/dev/null; then
+        log "restart hyprdesk"
+        run systemctl --user restart hyprdesk.service
         return 0
     fi
 
-    log "restart qs startmenu"
-    pkill -f 'qs -c startmenu' >/dev/null 2>&1 || true
-    sleep 0.3
-    nohup "$starter" >/dev/null 2>&1 &
+    log "start hyprdesk"
+    run systemctl --user start hyprdesk.service
 }

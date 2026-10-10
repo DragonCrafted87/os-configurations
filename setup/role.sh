@@ -519,4 +519,4 @@ else
     fi
 fi
 
-restart_qs_if_needed
+restart_desk_if_needed

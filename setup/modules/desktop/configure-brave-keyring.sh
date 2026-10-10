@@ -182,7 +182,7 @@ if [[ -f "$wrapper_src" ]]; then
     fi
 fi
 
-# Also drop a user desktop file so Hypr/Quickshell launchers hit the wrapper.
+# Also drop a user desktop file so Hyprland launchers hit the wrapper.
 desk_dest="${DOTFILES_HOME}/.local/share/applications/brave-browser.desktop"
 if [[ "${DOTFILES_DRY_RUN:-0}" != "1" ]]; then
     ensure_dir "$(dirname "$desk_dest")"

@@ -57,7 +57,8 @@ If that directory stays empty, the phone plugin is not sending contacts
 
 - Tray: `kdeconnect-indicator` (started by
   `config/hypr/scripts/start-kdeconnect.sh`).
-- SMS window: `kdeconnect-sms` (needs `qt5-qtmultimedia`).
+- SMS window: `kdeconnect-sms` (needs `qt5-qtmultimedia` and, on the Qt6
+  build, `lib64KF6ConfigQml` for the `org.kde.config` module).
 - Re-run `~/dot-files/setup/modules/desktop/install-kdeconnect.sh`
   after a role reset if the firewall ports vanished.
 

@@ -15,6 +15,11 @@ use `compiler.bashrc` clang.
 Bump tags in `setup/versions.conf`. An already-exported env var still
 wins for a one-off (`HYPRLAND_TAG=v0.56.2`). The stamp file under
 `/usr/local/share/hyprland-source/` records the last successful set.
+hyprdesk is not in that stamp. The module records `HYPRDESK_REV` in
+`.hyprdesk-stamp` and builds the desk app from `setup/files/hyprdesk`
+when that file does not match, including when the prefix stamp is already
+current. The volume overlay and start menu requirements are
+`setup/files/hyprdesk/docs/`.
 
 ## When the stack moves to `/usr`
 

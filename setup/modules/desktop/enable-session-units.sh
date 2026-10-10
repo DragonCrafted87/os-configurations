@@ -46,3 +46,12 @@ case "$role" in
         disable_user_service htpc-session.target
         ;;
 esac
+
+# hyprdesk is the start menu and volume overlay. Disable a unit left
+# enabled by an older setup. disable_user_service does not stop it.
+disable_user_service qs-startmenu.service
+if systemctl --user is-active --quiet qs-startmenu.service 2>/dev/null; then
+    log "stop qs-startmenu.service"
+    run systemctl --user stop qs-startmenu.service || true
+fi
+enable_user_service hyprdesk.service

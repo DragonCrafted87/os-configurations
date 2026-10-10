@@ -45,7 +45,6 @@ remove_spin_border_unit() {
 
 ensure_packages \
     ly \
-    quickshell \
     kitty \
     xdg-desktop-portal \
     xdg-desktop-portal-gtk \

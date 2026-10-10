@@ -7,7 +7,6 @@ Wants=hyprland-session.service
 Wants=workstation-brave.service
 Wants=workstation-steam.service
 Wants=workstation-discord.service
-Wants=qs-startmenu.service
 Wants=workstation-litra.service
 Wants=workstation-kdeconnect.service
 Wants=ntfy-workstations.service

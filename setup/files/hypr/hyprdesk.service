@@ -1,0 +1,16 @@
+[Unit]
+Description=Hyprdesk menu and volume OSD
+PartOf=graphical-session.target
+After=hyprland-session.service
+ConditionPathExists=/usr/local/bin/hyprdesk
+
+[Service]
+Type=simple
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/hyprdesk -d
+Restart=on-failure
+RestartSec=2
+Slice=session.slice
+
+[Install]
+WantedBy=graphical-session.target
