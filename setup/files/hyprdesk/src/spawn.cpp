@@ -98,19 +98,24 @@ int run_capture(const std::vector<std::string>& args, std::string& output) {
 void run_detached(const std::vector<std::string>& args) {
     if (args.empty())
         return;
-    pid_t pid = fork();
-    if (pid != 0)
-        return;
-    setsid();
-    int devnull = open("/dev/null", O_RDWR);
-    if (devnull >= 0) {
-        dup2(devnull, STDIN_FILENO);
-        dup2(devnull, STDOUT_FILENO);
-        dup2(devnull, STDERR_FILENO);
-        if (devnull > 2)
-            close(devnull);
+    int status = 0;
+    while (waitpid(-1, &status, WNOHANG) > 0) {
     }
-    auto copied = argv_of(args);
-    posix_spawnp(&pid, copied[0], nullptr, nullptr, copied.data(), environ);
-    _exit(0);
+    // fork() from this process deadlocks: the volume thread can hold a
+    // lock the child needs before posix_spawnp. Spawn from this thread.
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDWR, 0);
+    posix_spawn_file_actions_adddup2(&actions, STDIN_FILENO, STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, STDIN_FILENO, STDERR_FILENO);
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+#ifdef POSIX_SPAWN_SETSID
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSID);
+#endif
+    pid_t pid     = 0;
+    auto  copied  = argv_of(args);
+    posix_spawnp(&pid, copied[0], &actions, &attr, copied.data(), environ);
+    posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attr);
 }

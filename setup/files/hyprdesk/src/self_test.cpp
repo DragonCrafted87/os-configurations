@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <sys/wait.h>
+#include <unistd.h>
 
 namespace {
 
@@ -141,6 +143,18 @@ StartupWMClass=kitty
     CpuSample earlier{10, 100};
     CpuSample later{20, 200};
     EXPECT(cpu_percent(earlier, later) == 90);
+
+    run_detached({"/bin/true"});
+    bool reaped = false;
+    for (int i = 0; i < 50 && !reaped; ++i) {
+        int   status = 0;
+        pid_t got    = waitpid(-1, &status, WNOHANG);
+        if (got > 0)
+            reaped = true;
+        else
+            usleep(10000);
+    }
+    EXPECT(reaped);
 
     if (g_failures != 0)
         return false;

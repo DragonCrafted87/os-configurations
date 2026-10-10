@@ -33,6 +33,8 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
    Graphics, Internet, Multimedia, Office, Settings, and System.
 1. Hovering a category SHALL open its flyout without a click. Hover
    SHALL NOT change a pinned category.
+1. The pointer entering the windows, tray, volume, status, or power
+   section SHALL close an unpinned flyout.
 1. A click SHALL pin that category. A second click on the pinned category
    SHALL unpin it and close the flyout.
 1. Typing in the search field SHALL list matches from every category and
@@ -48,9 +50,11 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 ## Windows
 
 1. The menu SHALL list client windows from `hyprctl clients`.
+1. Each window row SHALL show that window's workspace.
 1. The menu SHALL open on minimized windows. When none are minimized, the
    list SHALL show every window instead.
 1. Min and All SHALL switch that filter. Refresh SHALL reread the clients.
+   The Refresh label SHALL stay on one line.
 1. A left click SHALL restore that window onto the workspace that was
    current when the menu opened, then close the menu.
 1. A right click SHALL close that window.
@@ -84,9 +88,12 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 ## Clock and power
 
 1. The menu SHALL show CPU, memory, GPU, and network, then the clock and
-   the date. The date SHALL sit fully above the power row.
-1. The power row SHALL show lock, logout, suspend, reboot, and shutdown,
-   each wide enough to read, in that order.
+   the date. The clock and the date SHALL use the same font size. The
+   status line SHALL stay fully visible when those values change width.
+1. The power row SHALL be the bottom row of the menu. It SHALL show
+   lock, logout, suspend, reboot, and shutdown, each wide enough to
+   read, in that order.
+1. Category buttons and power buttons SHALL NOT use the accent fill.
 1. Each power button SHALL run `scripts/session-control.sh` with that
    action, then close the menu.
 

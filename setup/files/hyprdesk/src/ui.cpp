@@ -80,6 +80,47 @@ LabelExtent measure_label(const std::string& text, const std::string& family, fl
     return extent;
 }
 
+std::string wide_status_line(const StatsText& stats) {
+    std::string mem = stats.mem.empty() ? "mem 000/000.0G" : stats.mem;
+    const auto  slash = mem.find('/');
+    if (slash != std::string::npos) {
+        const auto whole  = mem.substr(slash + 1);
+        const auto dot    = whole.find('.');
+        const auto digits = std::max<size_t>(1, dot == std::string::npos ? whole.size() : dot);
+        mem               = "mem " + std::string(digits, '8') + "/" + whole;
+    }
+    const std::string gpu = stats.gpu.find('%') == std::string::npos ? "gpu 100% 100°" : stats.gpu;
+    return "cpu 100%  " + mem + "  " + gpu + "  " + stats.net;
+}
+
+std::string window_meta(const Client& client) {
+    const auto& klass = client.initial_class.empty() ? client.klass : client.initial_class;
+    if (client.workspace.empty())
+        return klass;
+    if (klass.empty())
+        return client.workspace;
+    return klass + "  ·  " + client.workspace;
+}
+
+std::string lua_quote(const std::string& text) {
+    std::string out = "\"";
+    for (const char c : text) {
+        if (c == '\\' || c == '"')
+            out.push_back('\\');
+        if (c == '\n') {
+            out += "\\n";
+            continue;
+        }
+        out.push_back(c);
+    }
+    out.push_back('"');
+    return out;
+}
+
+void hypr_dispatch(const std::string& expression) {
+    run_detached({hyprctl_bin(), "dispatch", expression});
+}
+
 CDynamicSize fill_auto() {
     return {CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_AUTO, {1.F, 0.F}};
 }
@@ -107,6 +148,7 @@ class DeskUi {
     void refresh_volume();
     void launch(const DesktopEntry& entry);
     void restore_client(const Client& client);
+    void leave_categories();
     void close_client(const Client& client);
     void power(const std::string& action);
     void open_tray_menu(const TrayIcon& icon);
@@ -143,6 +185,8 @@ class DeskUi {
     CSharedPointer<CTextElement>          m_clock;
     CSharedPointer<CTextElement>          m_date;
     CSharedPointer<CTextElement>          m_stats_text;
+    CSharedPointer<CTextElement>          m_volume_readout;
+    CSharedPointer<CSliderElement>        m_menu_slider;
     CSharedPointer<CTextElement>          m_osd_label;
     CSharedPointer<CRectangleElement>     m_osd_track;
     CAtomicSharedPointer<CTimer>          m_osd_timer;
@@ -370,16 +414,27 @@ void DeskUi::power(const std::string& action) {
 void DeskUi::restore_client(const Client& client) {
     if (!safe_window_address(client.address))
         return;
-    const std::string script = std::string(hyprctl_bin()) + " --batch \"dispatch movetoworkspace " + std::to_string(m_place.workspace) + ",address:" + client.address +
-                               "; dispatch focuswindow address:" + client.address + "; dispatch togglespecialworkspace minimized\"";
-    run_detached({"sh", "-c", script});
+    const std::string window = lua_quote("address:" + client.address);
+    hypr_dispatch("hl.dsp.window.move({ workspace = " + std::to_string(m_place.workspace) + ", window = " + window + " })");
+    hypr_dispatch("hl.dsp.focus({ window = " + window + " })");
+    if (is_minimized_workspace(client.workspace))
+        hypr_dispatch("hl.dsp.workspace.toggle_special(\"minimized\")");
     m_backend->addIdle([this] { close_menu(); });
+}
+
+void DeskUi::leave_categories() {
+    if (m_pinned || !m_search.empty())
+        return;
+    m_category.clear();
+    m_category_label.clear();
+    if (m_flyout)
+        m_flyout->close();
 }
 
 void DeskUi::close_client(const Client& client) {
     if (!safe_window_address(client.address))
         return;
-    run_detached({hyprctl_bin(), "dispatch", "closewindow", "address:" + client.address});
+    hypr_dispatch("hl.dsp.window.close({ window = " + lua_quote("address:" + client.address) + " })");
     m_backend->addIdle([this] { rebuild_menu(); });
 }
 
@@ -402,17 +457,11 @@ void DeskUi::launch(const DesktopEntry& entry) {
             return;
         }
     }
-    auto args = split_exec(entry.exec);
-    if (args.empty())
+    const std::string command = strip_exec_field_codes(entry.exec);
+    if (command.find_first_not_of(" \t") == std::string::npos)
         return;
-    std::string command;
-    for (const auto& arg : args) {
-        if (!command.empty())
-            command.push_back(' ');
-        command += arg;
-    }
-    run_detached({hyprctl_bin(), "dispatch", "workspace", std::to_string(m_place.workspace)});
-    run_detached({hyprctl_bin(), "dispatch", "exec", command});
+    hypr_dispatch("hl.dsp.focus({ workspace = " + std::to_string(m_place.workspace) + " })");
+    hypr_dispatch("hl.dsp.exec_cmd(" + lua_quote(command) + ")");
     m_backend->addIdle([this] { close_menu(); });
 }
 
@@ -485,6 +534,20 @@ void DeskUi::rebuild_menu() {
     if (show_all)
         m_minimized = false;
     m_menu_layout->clearChildren();
+    m_menu_slider.reset();
+    m_volume_readout.reset();
+    auto upper = CColumnLayoutBuilder::begin()->gap(6)->size(fill_auto())->commence();
+    auto rule  = [this] {
+        return CRectangleBuilder::begin()
+            ->color([this] {
+                auto color = m_palette->m_colors.text;
+                color.a    = 0.35F;
+                return color;
+            })
+            ->size(bar_size(1, 2))
+            ->commence();
+    };
+    auto below_categories = [this](const Vector2D&) { leave_categories(); };
     m_search_box = CTextboxBuilder::begin()
                        ->placeholder("Search apps…")
                        ->defaultText(std::string{m_search})
@@ -499,7 +562,7 @@ void DeskUi::rebuild_menu() {
                        })
                        ->size(bar_size(1, 32))
                        ->commence();
-    m_menu_layout->addChild(m_search_box);
+    upper->addChild(m_search_box);
 
     const struct {
         const char* label;
@@ -509,10 +572,8 @@ void DeskUi::rebuild_menu() {
         {"Internet", "Network"}, {"Multimedia", "AudioVideo"}, {"Office", "Office"}, {"Settings", "Settings"}, {"System", "System"},
     };
     for (const auto& category : categories) {
-        const bool selected = !m_search.empty() ? false : m_category == category.cat;
         auto button = CButtonBuilder::begin()
                           ->label(std::string{category.label})
-                          ->accent(selected)
                           ->noBorder(true)
                           ->fontSize({CFontSize::HT_FONT_TEXT, 1.F})
                           ->size(bar_size(1, 30))
@@ -543,10 +604,13 @@ void DeskUi::rebuild_menu() {
             m_category_label = category.label;
             rebuild_flyout();
         });
-        m_menu_layout->addChild(button);
+        upper->addChild(button);
     }
 
-    auto header = CRowLayoutBuilder::begin()->gap(8)->size(bar_size(1, 22))->commence();
+    upper->addChild(rule());
+    auto header = CRowLayoutBuilder::begin()->gap(8)->size(bar_size(1, 28))->commence();
+    header->setReceivesMouse(true);
+    header->setMouseEnter(below_categories);
     auto header_label = CTextBuilder::begin()
                             ->text(m_minimized ? std::string{"Minimized"} : std::string{"Windows"})
                             ->fontSize({CFontSize::HT_FONT_SMALL, 1.F})
@@ -554,48 +618,80 @@ void DeskUi::rebuild_menu() {
                             ->commence();
     header_label->setGrow(true, false);
     header->addChild(header_label);
-    header->addChild(CButtonBuilder::begin()
-                         ->label(m_minimized ? std::string{"All"} : std::string{"Min"})
-                         ->noBorder(true)
-                         ->size(box_size(48, 22))
-                         ->onMainClick([this](CSharedPointer<CButtonElement>) {
-                             m_minimized = !m_minimized;
-                             m_backend->addIdle([this] { rebuild_menu(); });
-                         })
-                         ->commence());
-    header->addChild(CButtonBuilder::begin()
-                         ->label("Refresh")
-                         ->noBorder(true)
-                         ->size(box_size(72, 22))
-                         ->onMainClick([this](CSharedPointer<CButtonElement>) {
+    auto filter_button = CButtonBuilder::begin()
+                             ->label(m_minimized ? std::string{"All"} : std::string{"Min"})
+                             ->ellipsize(true)
+                             ->noBorder(true)
+                             ->size(box_size(48, 26))
+                             ->onMainClick([this](CSharedPointer<CButtonElement>) {
+                                 m_minimized = !m_minimized;
+                                 m_backend->addIdle([this] { rebuild_menu(); });
+                             })
+                             ->commence();
+    filter_button->setReceivesMouse(true);
+    filter_button->setMouseEnter(below_categories);
+    header->addChild(filter_button);
+    auto refresh_button = CButtonBuilder::begin()
+                              ->label("Refresh")
+                              ->ellipsize(true)
+                              ->noBorder(true)
+                              ->fontSize({CFontSize::HT_FONT_SMALL, 1.F})
+                              ->size(box_size(96, 26))
+                              ->onMainClick([this](CSharedPointer<CButtonElement>) {
                              std::string json;
                              run_capture({hyprctl_bin(), "clients", "-j"}, json);
                              m_clients = parse_clients(json);
                              m_backend->addIdle([this] { rebuild_menu(); });
                          })
-                         ->commence());
-    m_menu_layout->addChild(header);
+                         ->commence();
+    refresh_button->setReceivesMouse(true);
+    refresh_button->setMouseEnter(below_categories);
+    header->addChild(refresh_button);
+    upper->addChild(header);
 
-    const float window_h = windows.empty() ? 28.F : std::min<float>(static_cast<float>(windows.size()), 6.F) * 34.F;
+    const float window_h = windows.empty() ? 28.F : std::min<float>(static_cast<float>(windows.size()), 6.F) * 44.F;
     auto window_scroll = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, window_h))->commence();
+    window_scroll->setReceivesMouse(true);
+    window_scroll->setMouseEnter(below_categories);
     auto window_list   = CColumnLayoutBuilder::begin()->gap(2)->size(fill_auto())->commence();
     if (windows.empty()) {
-        window_list->addChild(CTextBuilder::begin()->text(m_minimized ? std::string{"No minimized windows"} : std::string{"No windows"})->size(bar_size(1, 24))->commence());
+        window_list->addChild(CTextBuilder::begin()->text(m_minimized ? std::string{"No minimized windows"} : std::string{"No windows"})->async(false)->size(bar_size(1, 24))->commence());
     }
     for (const auto& client : windows) {
         const auto title = client.title.empty() ? std::string{"(no title)"} : client.title;
-        auto button = CButtonBuilder::begin()
-                          ->label(std::string{title})
-                          ->ellipsize(true)
-                          ->noBorder(true)
-                          ->size(bar_size(1, 32))
-                          ->onMainClick([this, client](CSharedPointer<CButtonElement>) { restore_client(client); })
-                          ->onRightClick([this, client](CSharedPointer<CButtonElement>) { close_client(client); })
-                          ->commence();
-        window_list->addChild(button);
+        const auto meta  = window_meta(client);
+        auto row = CRectangleBuilder::begin()->color([] { return CHyprColor{0, 0, 0, 0}; })->rounding(m_palette->m_vars.smallRounding)->size(bar_size(1, 42))->commence();
+        row->setReceivesMouse(true);
+        row->setMouseEnter(below_categories);
+        row->setMouseButton([this, client](Input::eMouseButton button, bool down) {
+            if (!down)
+                return;
+            if (button == Input::MOUSE_BUTTON_RIGHT)
+                close_client(client);
+            else if (button == Input::MOUSE_BUTTON_LEFT)
+                restore_client(client);
+        });
+        auto lines = CColumnLayoutBuilder::begin()->gap(0)->size(percent_box(1, 1))->commence();
+        lines->setMargin(4);
+        lines->addChild(CTextBuilder::begin()
+                            ->text(std::string{title})
+                            ->async(false)
+                            ->size(bar_size(1, 18))
+                            ->commence());
+        if (!meta.empty()) {
+            lines->addChild(CTextBuilder::begin()
+                                ->text(std::string{meta})
+                                ->async(false)
+                                ->fontSize({CFontSize::HT_FONT_SMALL, 1.F})
+                                ->color([this] { return m_palette->m_colors.text; })
+                                ->size(bar_size(1, 14))
+                                ->commence());
+        }
+        row->addChild(lines);
+        window_list->addChild(row);
     }
     window_scroll->addChild(window_list);
-    m_menu_layout->addChild(window_scroll);
+    upper->addChild(window_scroll);
 
     m_tray.refresh();
     if (!m_tray.items().empty()) {
@@ -607,11 +703,17 @@ void DeskUi::rebuild_menu() {
                               ->ellipsize(true)
                               ->noBorder(true)
                               ->size(box_size(28, 28))
-                              ->onMainClick([this, icon](CSharedPointer<CButtonElement>) { m_tray.activate(icon, 0, 0); })
+                              ->onMainClick([this, icon](CSharedPointer<CButtonElement>) {
+                                  leave_categories();
+                                  m_tray.activate(icon, 0, 0);
+                              })
                               ->onRightClick([this, icon](CSharedPointer<CButtonElement>) {
+                                  leave_categories();
                                   m_backend->addIdle([this, icon] { open_tray_menu(icon); });
                               })
                               ->commence();
+            button->setReceivesMouse(true);
+            button->setMouseEnter(below_categories);
             button->setMouseButton([this, icon](Input::eMouseButton button, bool down) {
                 if (!down || button != Input::MOUSE_BUTTON_MIDDLE)
                     return;
@@ -631,16 +733,25 @@ void DeskUi::rebuild_menu() {
             button->setTooltip(std::string{label});
             tray_row->addChild(button);
         }
-        m_menu_layout->addChild(tray_row);
+        tray_row->setReceivesMouse(true);
+        tray_row->setMouseEnter(below_categories);
+        upper->addChild(rule());
+        upper->addChild(tray_row);
     }
 
+    upper->addChild(rule());
     auto volume_row = CRowLayoutBuilder::begin()->gap(8)->size(bar_size(1, 28))->commence();
-    volume_row->addChild(CButtonBuilder::begin()
-                             ->label(menu_volume_caption(m_volume))
-                             ->noBorder(true)
-                             ->size(box_size(56, 28))
-                             ->onMainClick([this](CSharedPointer<CButtonElement>) { toggle_mute(); })
-                             ->commence());
+    volume_row->setReceivesMouse(true);
+    volume_row->setMouseEnter(below_categories);
+    auto mute_button = CButtonBuilder::begin()
+                           ->label(menu_volume_caption(m_volume))
+                           ->noBorder(true)
+                           ->size(box_size(56, 28))
+                           ->onMainClick([this](CSharedPointer<CButtonElement>) { toggle_mute(); })
+                           ->commence();
+    mute_button->setReceivesMouse(true);
+    mute_button->setMouseEnter(below_categories);
+    volume_row->addChild(mute_button);
     auto slider = CSliderBuilder::begin()
                       ->min(0)
                       ->max(1.5F)
@@ -651,47 +762,83 @@ void DeskUi::rebuild_menu() {
                           if (std::abs(snapped - m_volume.level) < 0.001 && !m_volume.muted)
                               return;
                           apply_volume(snapped, true);
+                          if (m_volume_readout)
+                              m_volume_readout->setText(menu_volume_percent(m_volume));
                       })
                       ->commence();
     slider->setGrow(true, false);
+    slider->setReceivesMouse(true);
+    slider->setMouseEnter(below_categories);
+    m_menu_slider = slider;
     slider->setMouseAxis([this](Input::eAxisAxis axis, float delta) {
         if (axis != Input::AXIS_AXIS_VERTICAL || delta == 0.F)
             return;
-        const double dir = delta > 0 ? 1 : -1;
+        const double dir = delta < 0.F ? 1.0 : -1.0;
         apply_volume(snap_volume(m_volume.level + (dir * 0.025)), true);
-        if (m_menu_open)
-            m_backend->addIdle([this] { rebuild_menu(); });
+        if (m_menu_slider)
+            m_menu_slider->rebuild()->val(static_cast<float>(m_volume.muted ? 0.0 : m_volume.level))->commence();
+        if (m_volume_readout)
+            m_volume_readout->setText(menu_volume_percent(m_volume));
     });
     volume_row->addChild(slider);
-    volume_row->addChild(CTextBuilder::begin()
-                             ->text(menu_volume_percent(m_volume))
-                             ->align(HT_FONT_ALIGN_RIGHT)
-                             ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.text; })
-                             ->size(box_size(56, 28))
-                             ->commence());
-    m_menu_layout->addChild(volume_row);
+    m_volume_readout = CTextBuilder::begin()
+                           ->text(menu_volume_percent(m_volume))
+                           ->align(HT_FONT_ALIGN_RIGHT)
+                           ->async(false)
+                           ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.text; })
+                           ->size(box_size(56, 28))
+                           ->commence();
+    volume_row->addChild(m_volume_readout);
+    upper->addChild(volume_row);
 
     m_stats = read_stats(m_cpu);
     m_cpu   = read_cpu_sample();
-    m_stats_text = CTextBuilder::begin()->text(m_stats.cpu + "  " + m_stats.mem + "  " + m_stats.gpu + "  " + m_stats.net)->size(bar_size(1, 22))->commence();
-    m_clock = CTextBuilder::begin()->text(std::string{m_stats.clock})->fontSize({CFontSize::HT_FONT_H1, 1.F})->color([this] { return m_palette->m_colors.accent; })->size(bar_size(1, 36))->commence();
-    m_date = CTextBuilder::begin()->text(std::string{m_stats.date})->fontSize({CFontSize::HT_FONT_H2, 1.F})->color([this] { return m_palette->m_colors.accent; })->size(bar_size(1, 32))->commence();
-    m_menu_layout->addChild(m_stats_text);
-    m_menu_layout->addChild(m_clock);
-    m_menu_layout->addChild(m_date);
+    const std::string status = m_stats.cpu + "  " + m_stats.mem + "  " + m_stats.gpu + "  " + m_stats.net;
+    const float status_w = std::max(1.F, measure_label(wide_status_line(m_stats), m_palette->m_vars.fontFamily, static_cast<float>(m_palette->m_vars.fontSize)).width);
+    upper->addChild(rule());
+    m_stats_text = CTextBuilder::begin()->text(std::string{status})->async(false)->size(box_size(status_w, 22))->commence();
+    m_stats_text->setReceivesMouse(true);
+    m_stats_text->setMouseEnter(below_categories);
+    m_clock = CTextBuilder::begin()
+                  ->text(std::string{m_stats.clock})
+                  ->async(false)
+                  ->fontSize({CFontSize::HT_FONT_H1, 1.F})
+                  ->color([this] { return m_palette->m_colors.accent; })
+                  ->size(bar_size(1, 28))
+                  ->commence();
+    m_date = CTextBuilder::begin()
+                 ->text(std::string{m_stats.date})
+                 ->async(false)
+                 ->fontSize({CFontSize::HT_FONT_H1, 1.F})
+                 ->color([this] { return m_palette->m_colors.accent; })
+                 ->size(bar_size(1, 28))
+                 ->commence();
+    upper->addChild(m_stats_text);
+    upper->addChild(m_clock);
+    upper->addChild(m_date);
+
+    auto scroller = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, 1))->commence();
+    scroller->setGrow(false, true);
+    scroller->addChild(upper);
+    m_menu_layout->addChild(scroller);
 
     auto power_row = CRowLayoutBuilder::begin()->gap(4)->size(bar_size(1, 40))->commence();
+    power_row->setReceivesMouse(true);
+    power_row->setMouseEnter(below_categories);
     const float power_w = std::max(64.F, std::floor((std::max(280.F, static_cast<float>(m_place.menu_w) - 36.F)) / 5.F));
     for (const auto& action : {"lock", "logout", "suspend", "reboot", "shutdown"}) {
         auto button = CButtonBuilder::begin()
                           ->label(std::string{action})
-                          ->noBorder(action != std::string{"shutdown"})
-                          ->accent(action == std::string{"shutdown"})
+                          ->ellipsize(true)
+                          ->noBorder(true)
                           ->size(box_size(power_w, 32))
                           ->onMainClick([this, action](CSharedPointer<CButtonElement>) { power(action); })
                           ->commence();
+        button->setReceivesMouse(true);
+        button->setMouseEnter(below_categories);
         power_row->addChild(button);
     }
+    m_menu_layout->addChild(rule());
     m_menu_layout->addChild(power_row);
     if (m_search_box)
         m_search_box->focus();
@@ -710,6 +857,16 @@ void DeskUi::open_menu_at_cursor() {
         parse_cursor_pos(cursor, x, y);
     const int estimate = 20 + 36 + (10 * 30) + (9 * 6) + 22 + (6 * 34) + 28 + 32 + 22 + 36 + 32 + 40 + (14 * 6);
     m_place            = place_menu(x, y, parse_monitors(monitors_json), estimate);
+    m_stats            = read_stats(m_cpu);
+    m_cpu              = read_cpu_sample();
+    const float status_w = measure_label(wide_status_line(m_stats), m_palette->m_vars.fontFamily, static_cast<float>(m_palette->m_vars.fontSize)).width + 28.F;
+    if (status_w > static_cast<float>(m_place.menu_w))
+        m_place.menu_w = std::min(m_place.monitor_w - 16, static_cast<int>(std::ceil(status_w)));
+    m_place.flyout_on_left = (m_place.menu_left + m_place.menu_w + m_place.flyout_gap + m_place.flyout_w) > (m_place.monitor_w - 8);
+    if (m_place.flyout_on_left)
+        m_place.flyout_left = std::max(8, m_place.menu_left - m_place.flyout_w - m_place.flyout_gap);
+    else
+        m_place.flyout_left = m_place.menu_left + m_place.menu_w + m_place.flyout_gap;
     m_clients          = parse_clients(clients_json);
     m_apps             = load_desktop_entries();
     m_menu_open        = true;
