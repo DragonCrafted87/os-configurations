@@ -5,9 +5,11 @@ START=95
 STOP=10
 
 start_service() {
+    # OpenWrt has no hostname(1). The system name is the one uci stores.
+    host=$(uci -q get system.@system[0].hostname)
     procd_open_instance
     procd_set_param command /usr/bin/host-status.sh
-    procd_set_param env HOST_STATUS_BROKER=192.168.8.21 HOST_STATUS_ROOT=/
+    procd_set_param env HOST_STATUS_BROKER=192.168.8.21 HOST_STATUS_ROOT=/ HOST_STATUS_HOST="$host"
     procd_set_param respawn
     procd_close_instance
 }
