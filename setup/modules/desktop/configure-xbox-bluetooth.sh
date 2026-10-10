@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Xbox Elite Series 2 over the official wireless dongle (and USB).
-# The dongle is not a standard xpad device; it needs the xone kernel
-# driver plus firmware extracted from Microsoft's Windows package.
-# Bluetooth pads are configure-xbox-bluetooth.sh (hid-xpadneo).
+# Bluetooth Xbox pad. hid-xpadneo is the controller interface.
+# The wireless dongle stays in configure-xbox-controller.
 set -euo pipefail
 # shellcheck disable=SC1091
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../lib/lib.sh"
 
 require_user
 
-XONE_DIR="${XONE_DIR:-${DOTFILES_HOME}/src/xone}"
-XONE_URL="${XONE_URL:-https://github.com/medusalix/xone.git}"
+XPADNEO_DIR="${XPADNEO_DIR:-${DOTFILES_HOME}/src/xpadneo}"
+XPADNEO_URL="${XPADNEO_URL:-https://github.com/atar-axis/xpadneo.git}"
 KERNEL="$(uname -r)"
 
 # uname -r looks like 6.14.2-desktop-3omv2590 or 6.15.0-desktop-0.rc2.3omv2590.
@@ -34,7 +32,7 @@ running_kernel_devel_packages() {
 }
 
 install_build_deps() {
-    local pkgs=(dkms curl cabextract git gcc make)
+    local pkgs=(dkms git gcc make)
     local extra=()
     mapfile -t extra < <(running_kernel_devel_packages)
     if dnf list --available steam-devices >/dev/null 2>&1 || rpm -q steam-devices >/dev/null 2>&1; then
@@ -55,14 +53,6 @@ ensure_input_groups() {
             run sudo usermod -aG "$grp" "${DOTFILES_USER}"
         fi
     done
-}
-
-clean_broken_xone() {
-    if [[ -d /usr/src/xone-unknown || -d /var/lib/dkms/xone/unknown ]]; then
-        log "remove broken xone/unknown DKMS tree"
-        run sudo dkms remove -m xone -v unknown --all || true
-        run sudo rm -rf /usr/src/xone-unknown /var/lib/dkms/xone/unknown
-    fi
 }
 
 dkms_module_version() {
@@ -97,48 +87,36 @@ install_helper() {
     run sudo install -m 0755 "$src" /usr/local/bin/xbox-controller
 }
 
-install_xone() {
-    ensure_dir "$(dirname "$XONE_DIR")"
-    ensure_repo "$XONE_URL" "$XONE_DIR"
+install_xpadneo() {
+    ensure_dir "$(dirname "$XPADNEO_DIR")"
+    ensure_repo "$XPADNEO_URL" "$XPADNEO_DIR"
     if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
         return 0
     fi
-    git -C "$XONE_DIR" fetch --tags --force >/dev/null 2>&1 || true
-    clean_broken_xone
-    if [[ -z "$(dkms_module_version xone || true)" ]]; then
-        log "install xone dkms from ${XONE_DIR}"
-        run sudo git config --global --add safe.directory "$XONE_DIR" || true
-        run sudo bash -lc "cd $(printf '%q' "$XONE_DIR") && ./install.sh --release"
-    else
-        log "xone dkms tree present"
+    local neo_name=""
+    if dkms status hid-xpadneo >/dev/null 2>&1 && [[ -n "$(dkms_module_version hid-xpadneo || true)" ]]; then
+        neo_name=hid-xpadneo
+    elif dkms status xpadneo >/dev/null 2>&1 && [[ -n "$(dkms_module_version xpadneo || true)" ]]; then
+        neo_name=xpadneo
     fi
-    ensure_dkms_for_running_kernel xone
-    run sudo modprobe xone-dongle || true
-    if [[ ! -f /lib/firmware/xow_dongle.bin && ! -f /usr/lib/firmware/xow_dongle.bin ]]; then
-        log "fetch Xbox wireless dongle firmware"
-        if [[ -x /usr/local/bin/xone-get-firmware.sh ]]; then
-            run sudo /usr/local/bin/xone-get-firmware.sh --skip-disclaimer
-        elif [[ -x "${XONE_DIR}/install/firmware.sh" ]]; then
-            run sudo "${XONE_DIR}/install/firmware.sh" --skip-disclaimer
+    if [[ -z "$neo_name" && -x "${XPADNEO_DIR}/install.sh" ]]; then
+        log "install xpadneo (Bluetooth pad)"
+        run sudo bash -lc "cd $(printf '%q' "$XPADNEO_DIR") && ./install.sh"
+        if [[ -n "$(dkms_module_version hid-xpadneo || true)" ]]; then
+            neo_name=hid-xpadneo
         else
-            warn "xone-get-firmware.sh not found; plug the dongle after running it by hand"
+            neo_name=xpadneo
         fi
-    else
-        log "dongle firmware already installed"
     fi
+    [[ -n "$neo_name" ]] && ensure_dkms_for_running_kernel "$neo_name"
+    run sudo modprobe hid-xpadneo || true
 }
 
-install_xpadneo() {
-    [[ "${XBOX_INSTALL_XPADNEO:-1}" == "1" ]] || return 0
-    local neo="${SETUP_DIR}/modules/desktop/configure-xbox-bluetooth.sh"
-    [[ -f "$neo" ]] || die "missing ${neo}"
-    bash "$neo"
-}
+[[ "${XBOX_INSTALL_XPADNEO:-1}" == "1" ]] || exit 0
 
 install_build_deps
 ensure_input_groups
-install_xone
 install_xpadneo
 install_helper
 
-log "Xbox helper: xbox-controller status   (xpadneo has no desktop file; it is a kernel module)"
+log "Xbox Bluetooth: hid-xpadneo   (xbox-controller status)"
