@@ -7,8 +7,9 @@
 #   * every getty@ via a systemd drop-in (setterm)
 #   * Ly inactivity_cmd / inactivity_delay (config.ini or config.lua)
 #   * ly-idle-blank, because Ly 1.1.0 has no inactivity_cmd and keeps
-#     redrawing the greeter. The helper powers the backlight down.
-#     amdgpu rejects writes to the drm dpms node.
+#     redrawing the greeter. The helper sets connector DPMS. Backlight
+#     brightness 0 does not turn this panel off, and the dpms node is
+#     read-only.
 #   * Ly greeter colors / TTY palette (Kitty Tango Dark)
 
 set -euo pipefail

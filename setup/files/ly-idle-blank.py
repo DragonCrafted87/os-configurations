@@ -231,8 +231,11 @@ def main():
     last_rescan = 0.0
     last_input = time.monotonic()
     blanked = False
+    # The flag can be set while the connector dpms node still reads On.
+    # blank re-applies DPMS in that case. A restart must not light the panel.
     if state_blanked():
-        run_display("unblank")
+        run_display("blank")
+        blanked = state_blanked()
 
     while True:
         now = time.monotonic()

@@ -46,4 +46,27 @@ grep -qx 'amdgpu_bl0 32 0' "${work}/state/saved" || fail "second blank overwrote
 [[ ! -e "${work}/state/saved" ]] || fail "unblank left the saved state"
 
 "$script" unblank
+
+# A connected connector that stays On is not a finished blank.
+# set_dpms does not run unless LY_BLANK_SYS is /sys.
+live="${work}/live"
+live_bl="${live}/class/backlight/amdgpu_bl0"
+live_dpms="${live}/class/drm/card0-eDP-1/dpms"
+live_state="${work}/live-state"
+mkdir -p "$live_bl" "$(dirname "$live_dpms")" "$live_state"
+printf '32\n' >"${live_bl}/brightness"
+printf '0\n' >"${live_bl}/bl_power"
+printf 'connected\n' >"${live}/class/drm/card0-eDP-1/status"
+printf 'On\n' >"$live_dpms"
+chmod 444 "$live_dpms"
+: >"${live_state}/blanked"
+printf 'stale\n' >"${live_state}/method"
+export LY_BLANK_SYS="$live"
+export LY_BLANK_STATE="$live_state"
+
+"$script" blank
+[[ ! -e "${live_state}/blanked" ]] || fail "blank recorded success while dpms stayed On"
+[[ ! -e "${live_state}/method" ]] || fail "stale method survived a connector that stayed On"
+[[ "$(cat "$live_dpms")" == On ]] || fail "fallback wrote the read-only dpms node"
+
 printf '%s\n' "ly-blank-displays-test: ok"
