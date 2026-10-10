@@ -249,14 +249,24 @@ void DeskUi::show_osd() {
                       ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.text; })
                       ->size(bar_size(1, 16))
                       ->commence();
-    auto track = CRectangleBuilder::begin()->color([this] { return m_palette->m_colors.base; })->rounding(8)->size(percent_box(1, 1))->commence();
-    track->setGrow(true);
+    // Percent height of the whole overlay does not fit under the label, and
+    // the layout then drops the track. Keep both sizes absolute.
+    constexpr float track_w = 20.F;
+    constexpr float track_h = 168.F;
+    auto track = CRectangleBuilder::begin()
+                     ->color([this] { return m_palette->m_colors.base; })
+                     ->borderColor([this] { return m_palette->m_colors.alternateBase; })
+                     ->borderThickness(1)
+                     ->rounding(8)
+                     ->size(box_size(track_w, track_h))
+                     ->commence();
     const float fill = static_cast<float>(volume_fill(m_volume));
-    if (fill > 0.F) {
+    const float bar_h = std::round(std::min(track_h, std::max(0.F, fill * track_h)));
+    if (bar_h >= 1.F) {
         auto bar = CRectangleBuilder::begin()
                        ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.accent; })
-                       ->rounding(8)
-                       ->size(percent_box(1, fill))
+                       ->rounding(6)
+                       ->size(box_size(track_w, bar_h))
                        ->commence();
         bar->setPositionMode(IElement::HT_POSITION_ABSOLUTE);
         bar->setPositionFlag(IElement::HT_POSITION_FLAG_BOTTOM, true);
