@@ -64,7 +64,7 @@ CHyprColor over_red() {
 
 class DeskUi {
   public:
-    explicit DeskUi(bool open_menu);
+    explicit DeskUi(bool open_menu, int listen_fd);
     void run();
 
   private:
@@ -118,12 +118,13 @@ class DeskUi {
     CSharedPointer<CTextElement>          m_date;
     CSharedPointer<CTextElement>          m_stats_text;
     CSharedPointer<CTextElement>          m_osd_label;
+    CSharedPointer<CRectangleElement>     m_osd_track;
     CAtomicSharedPointer<CTimer>          m_osd_timer;
     std::atomic<bool>                     m_stop{false};
     std::thread                           m_volume_thread;
 };
 
-DeskUi::DeskUi(bool open_menu) : m_backend(IBackend::create()), m_palette(m_backend->getPalette()) {
+DeskUi::DeskUi(bool open_menu, int listen_fd) : m_backend(IBackend::create()), m_palette(m_backend->getPalette()), m_listen(listen_fd) {
     int pipes[2] = {-1, -1};
     if (pipe2(pipes, O_CLOEXEC | O_NONBLOCK) == 0)
         m_poke = pipes[0];
@@ -155,27 +156,19 @@ DeskUi::DeskUi(bool open_menu) : m_backend(IBackend::create()), m_palette(m_back
         if (write_fd >= 0)
             close(write_fd);
     });
-    m_listen = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (m_listen >= 0) {
-        const auto path = desk_socket_path();
-        unlink(path.c_str());
-        sockaddr_un address{};
-        address.sun_family = AF_UNIX;
-        std::snprintf(address.sun_path, sizeof(address.sun_path), "%s", path.c_str());
-        if (bind(m_listen, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0 && listen(m_listen, 8) == 0) {
-            m_backend->addFd(m_listen, [this] {
-                while (true) {
-                    const int client = accept4(m_listen, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
-                    if (client < 0)
-                        break;
-                    char    buffer[64] = {};
-                    const auto got = read(client, buffer, sizeof(buffer) - 1);
-                    close(client);
-                    if (got > 0)
-                        handle_command(parse_command(buffer));
-                }
-            });
-        }
+        m_backend->addFd(m_listen, [this] {
+            while (true) {
+                const int client = accept4(m_listen, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
+                if (client < 0)
+                    break;
+                char       buffer[64] = {};
+                const auto got        = read(client, buffer, sizeof(buffer) - 1);
+                close(client);
+                if (got > 0)
+                    handle_command(parse_command(buffer));
+            }
+        });
     }
     if (open_menu)
         m_backend->addIdle([this] { open_menu_at_cursor(); });
@@ -231,41 +224,59 @@ void DeskUi::toggle_mute() {
 }
 
 void DeskUi::show_osd() {
-    if (m_osd)
-        m_osd->close();
-    auto background = CRectangleBuilder::begin()
-                          ->color([this] { return m_palette->m_colors.background; })
-                          ->borderColor([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.alternateBase; })
-                          ->borderThickness(1)
-                          ->rounding(m_palette->m_vars.bigRounding)
-                          ->size(percent_box(1, 1))
-                          ->commence();
-    auto column = CColumnLayoutBuilder::begin()->gap(6)->size(percent_box(1, 1))->commence();
-    column->setMargin(8);
-    // "112.5%" is the widest step. The old 44px window left ~28px after
-    // the margin, which clipped both that and "72.5%".
-    constexpr float osd_w = 96.F;
-    constexpr float osd_h = 220.F;
-    m_osd_label = CTextBuilder::begin()
-                      ->text(osd_label(m_volume))
-                      ->align(HT_FONT_ALIGN_CENTER)
-                      ->fontSize({CFontSize::HT_FONT_SMALL, 1.F})
-                      ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.text; })
-                      ->noEllipsize(true)
-                      ->size(box_size(osd_w - 16.F, 22.F))
-                      ->commence();
-    // Percent height of the whole overlay does not fit under the label, and
-    // the layout then drops the track. Keep both sizes absolute.
+    // "112.5%" is the widest step. A 44px window left ~28px after the margin.
+    constexpr float osd_w   = 96.F;
+    constexpr float osd_h   = 220.F;
     constexpr float track_w = 20.F;
     constexpr float track_h = 168.F;
-    auto track = CRectangleBuilder::begin()
-                     ->color([this] { return m_palette->m_colors.base; })
-                     ->borderColor([this] { return m_palette->m_colors.alternateBase; })
-                     ->borderThickness(1)
-                     ->rounding(8)
-                     ->size(box_size(track_w, track_h))
-                     ->commence();
-    const float fill = static_cast<float>(volume_fill(m_volume));
+
+    // A new layer on every step leaves the previous surface up until the
+    // compositor destroys it, so the overlay looks doubled.
+    if (!m_osd) {
+        auto background = CRectangleBuilder::begin()
+                              ->color([this] { return m_palette->m_colors.background; })
+                              ->borderColor([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.alternateBase; })
+                              ->borderThickness(1)
+                              ->rounding(m_palette->m_vars.bigRounding)
+                              ->size(percent_box(1, 1))
+                              ->commence();
+        auto column = CColumnLayoutBuilder::begin()->gap(6)->size(percent_box(1, 1))->commence();
+        column->setMargin(8);
+        m_osd_label = CTextBuilder::begin()
+                          ->text(osd_label(m_volume))
+                          ->align(HT_FONT_ALIGN_CENTER)
+                          ->fontSize({CFontSize::HT_FONT_SMALL, 1.F})
+                          ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.text; })
+                          ->noEllipsize(true)
+                          ->size(box_size(osd_w - 16.F, 22.F))
+                          ->commence();
+        m_osd_track = CRectangleBuilder::begin()
+                          ->color([this] { return m_palette->m_colors.base; })
+                          ->borderColor([this] { return m_palette->m_colors.alternateBase; })
+                          ->borderThickness(1)
+                          ->rounding(8)
+                          ->size(box_size(track_w, track_h))
+                          ->commence();
+        column->addChild(m_osd_label);
+        column->addChild(m_osd_track);
+        background->addChild(column);
+        m_osd = CWindowBuilder::begin()
+                    ->type(HT_WINDOW_LAYER)
+                    ->appClass("hyprdesk-osd")
+                    ->appTitle("Volume")
+                    ->preferredSize({osd_w, osd_h})
+                    ->anchor(kAnchorTopLeft)
+                    ->marginTopLeft({24, 24})
+                    ->exclusiveZone(-1)
+                    ->layer(3)
+                    ->kbInteractive(0)
+                    ->commence();
+        m_osd->m_rootElement->addChild(background);
+    }
+
+    m_osd_label->setText(osd_label(m_volume));
+    m_osd_track->clearChildren();
+    const float fill  = static_cast<float>(volume_fill(m_volume));
     const float bar_h = std::round(std::min(track_h, std::max(0.F, fill * track_h)));
     if (bar_h >= 1.F) {
         auto bar = CRectangleBuilder::begin()
@@ -275,23 +286,8 @@ void DeskUi::show_osd() {
                        ->commence();
         bar->setPositionMode(IElement::HT_POSITION_ABSOLUTE);
         bar->setPositionFlag(IElement::HT_POSITION_FLAG_BOTTOM, true);
-        track->addChild(bar);
+        m_osd_track->addChild(bar);
     }
-    column->addChild(m_osd_label);
-    column->addChild(track);
-    background->addChild(column);
-    m_osd = CWindowBuilder::begin()
-                ->type(HT_WINDOW_LAYER)
-                ->appClass("hyprdesk-osd")
-                ->appTitle("Volume")
-                ->preferredSize({osd_w, osd_h})
-                ->anchor(kAnchorTopLeft)
-                ->marginTopLeft({24, 24})
-                ->exclusiveZone(-1)
-                ->layer(3)
-                ->kbInteractive(0)
-                ->commence();
-    m_osd->m_rootElement->addChild(background);
     m_osd->open();
     if (m_osd_timer)
         m_osd_timer->cancel();
@@ -858,7 +854,10 @@ void DeskUi::run() {
 } // namespace
 
 int run_daemon(bool open_menu) {
-    DeskUi ui(open_menu);
+    const int listen_fd = acquire_server_socket();
+    if (listen_fd < 0)
+        return 0;
+    DeskUi ui(open_menu, listen_fd);
     ui.run();
     return 0;
 }

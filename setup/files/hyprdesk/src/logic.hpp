@@ -133,3 +133,4 @@ bool run_self_test();
 int         run_capture(const std::vector<std::string>& args, std::string& output);
 void        run_detached(const std::vector<std::string>& args);
 std::string desk_socket_path();
+int         acquire_server_socket();

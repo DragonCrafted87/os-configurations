@@ -6,7 +6,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cstdio>
 #include <cstdlib>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include <cstring>
 #include <vector>
@@ -30,6 +33,33 @@ std::string desk_socket_path() {
     if (const char* runtime = std::getenv("XDG_RUNTIME_DIR"); runtime && *runtime)
         return std::string(runtime) + "/hyprdesk.sock";
     return "/tmp/hyprdesk-" + std::to_string(getuid()) + ".sock";
+}
+
+int acquire_server_socket() {
+    const auto  path = desk_socket_path();
+    sockaddr_un address{};
+    address.sun_family = AF_UNIX;
+    if (path.size() >= sizeof(address.sun_path))
+        return -1;
+    std::snprintf(address.sun_path, sizeof(address.sun_path), "%s", path.c_str());
+
+    const int probe = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (probe >= 0 && connect(probe, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0) {
+        close(probe);
+        return -1;
+    }
+    if (probe >= 0)
+        close(probe);
+
+    unlink(path.c_str());
+    const int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (fd < 0)
+        return -1;
+    if (bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0 || listen(fd, 8) != 0) {
+        close(fd);
+        return -1;
+    }
+    return fd;
 }
 
 int run_capture(const std::vector<std::string>& args, std::string& output) {

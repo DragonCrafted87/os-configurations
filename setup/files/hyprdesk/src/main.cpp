@@ -5,6 +5,7 @@
 #define HYPRDESK_VERSION "1"
 #endif
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -12,9 +13,11 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <thread>
+
 namespace {
 
-bool send_command(const std::string& command) {
+bool send_command_once(const std::string& command) {
     const int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0)
         return false;
@@ -34,6 +37,15 @@ bool send_command(const std::string& command) {
     (void)write(fd, line.data(), line.size());
     close(fd);
     return true;
+}
+
+bool send_command(const std::string& command) {
+    for (int attempt = 0; attempt < 10; ++attempt) {
+        if (send_command_once(command))
+            return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return false;
 }
 
 } // namespace
