@@ -126,6 +126,17 @@ std::string workspace_lua(const Placement& place) {
     return lua_quote(name);
 }
 
+void pull_window(const Placement& place, const std::string& address) {
+    if (is_minimized_workspace(place.workspace_name))
+        return;
+    const std::string window = lua_quote("address:" + address);
+    const std::string ws     = workspace_lua(place);
+    // One eval so focus cannot run while the window is still on special:minimized.
+    const std::string code = "hl.dsp.window.move({ workspace = " + ws + ", follow = false, window = " + window + " })()\n" +
+                             "hl.dsp.focus({ window = " + window + " })()\n";
+    run_detached({hyprctl_bin(), "eval", code});
+}
+
 CDynamicSize fill_auto() {
     return {CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_AUTO, {1.F, 0.F}};
 }
@@ -419,10 +430,7 @@ void DeskUi::power(const std::string& action) {
 void DeskUi::restore_client(const Client& client) {
     if (!safe_window_address(client.address))
         return;
-    const std::string window = lua_quote("address:" + client.address);
-    const std::string ws     = workspace_lua(m_place);
-    hypr_dispatch("hl.dsp.window.move({ workspace = " + ws + ", window = " + window + " })");
-    hypr_dispatch("hl.dsp.focus({ window = " + window + " })");
+    pull_window(m_place, client.address);
     m_backend->addIdle([this] { close_menu(); });
 }
 
@@ -455,10 +463,7 @@ void DeskUi::launch(const DesktopEntry& entry) {
                 continue;
             if (!safe_window_address(client.address))
                 continue;
-            const std::string window = lua_quote("address:" + client.address);
-            const std::string ws     = workspace_lua(m_place);
-            hypr_dispatch("hl.dsp.window.move({ workspace = " + ws + ", window = " + window + " })");
-            hypr_dispatch("hl.dsp.focus({ window = " + window + " })");
+            pull_window(m_place, client.address);
             m_backend->addIdle([this] { close_menu(); });
             return;
         }
@@ -466,9 +471,12 @@ void DeskUi::launch(const DesktopEntry& entry) {
     const std::string command = strip_exec_field_codes(entry.exec);
     if (command.find_first_not_of(" \t") == std::string::npos)
         return;
+    if (is_minimized_workspace(m_place.workspace_name))
+        return;
     const std::string ws = workspace_lua(m_place);
-    hypr_dispatch("hl.dsp.focus({ workspace = " + ws + " })");
-    hypr_dispatch("hl.dsp.exec_cmd(" + lua_quote(command) + ", { workspace = " + ws + " })");
+    const std::string code = "hl.dsp.focus({ workspace = " + ws + " })()\n" +
+                             "hl.dsp.exec_cmd(" + lua_quote(command) + ", { workspace = " + ws + " })()\n";
+    run_detached({hyprctl_bin(), "eval", code});
     m_backend->addIdle([this] { close_menu(); });
 }
 
@@ -1000,7 +1008,7 @@ void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
             continue;
         }
         std::string label = item.label.empty() ? std::string{"Item"} : item.label;
-        if (!item.children.empty())
+        if (item.submenu)
             label += "  ›";
         auto button = CButtonBuilder::begin()
                           ->label(std::move(label))
@@ -1009,10 +1017,13 @@ void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
                           ->enabled(item.enabled)
                           ->size(bar_size(1, static_cast<float>(row_h)))
                           ->onMainClick([this, item, items](CSharedPointer<CButtonElement>) {
-                              if (!item.children.empty()) {
+                              if (item.submenu) {
                                   m_backend->addIdle([this, item, items] {
+                                      auto kids = item.children.empty() ? m_tray.submenu_items(m_tray_popup_icon, item.id) : item.children;
+                                      if (kids.empty())
+                                          return;
                                       m_tray_menu_stack.push_back(items);
-                                      show_tray_menu(item.children);
+                                      show_tray_menu(kids);
                                   });
                                   return;
                               }
@@ -1022,6 +1033,16 @@ void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
                               m_backend->addIdle([this] { close_menu(); });
                           })
                           ->commence();
+        if (item.submenu) {
+            button->setReceivesMouse(true);
+            button->setMouseEnter([this, item, items](const Vector2D&) {
+                auto kids = item.children.empty() ? m_tray.submenu_items(m_tray_popup_icon, item.id) : item.children;
+                if (kids.empty())
+                    return;
+                m_tray_menu_stack.push_back(items);
+                show_tray_menu(kids);
+            });
+        }
         column->addChild(button);
     }
     background->addChild(column);

@@ -57,7 +57,8 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
    The Refresh label SHALL stay on one line.
 1. A left click SHALL move that window onto the workspace that was
    current on the monitor under the menu, then close the menu. The
-   minimized workspace SHALL NOT be shown.
+   minimized workspace SHALL NOT be shown. `special:minimized` SHALL be
+   closed again if it becomes the visible special workspace.
 1. A right click SHALL close that window.
 1. An empty list SHALL say so. A long title SHALL ellipsize instead of
    stretching the menu.
@@ -70,7 +71,8 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 1. A right click SHALL open that item's menu at the pointer. The popup
    SHALL be only as large as its entries, and it SHALL stay on the
    monitor under the pointer.
-1. A submenu SHALL replace the popup contents and SHALL offer Back.
+1. A submenu SHALL open when the pointer hovers that row, replace the
+   popup contents, and SHALL offer Back.
 1. A left click on a menu entry that is not a submenu SHALL close the
    start menu.
 1. When the item has no menu layout, a fallback to the item's own context

@@ -214,6 +214,10 @@ bool read_menu_item(sd_bus_message* message, TrayMenuItem& item) {
             int visible = 1;
             if (sd_bus_message_read(message, "b", &visible) >= 0 && visible == 0)
                 item.label.clear();
+        } else if (std::strcmp(key, "children-display") == 0 && contents[0] == 's') {
+            const char* display = nullptr;
+            if (sd_bus_message_read(message, "s", &display) >= 0 && display && std::strcmp(display, "submenu") == 0)
+                item.submenu = true;
         } else {
             sd_bus_message_skip(message, contents);
         }
@@ -230,33 +234,35 @@ bool read_menu_item(sd_bus_message* message, TrayMenuItem& item) {
         }
         sd_bus_message_exit_container(message);
     }
+    if (!item.children.empty())
+        item.submenu = true;
     sd_bus_message_exit_container(message);
     return true;
 }
 
 } // namespace
 
-std::vector<TrayMenuItem> StatusTray::menu_items(const TrayIcon& icon) {
+std::vector<TrayMenuItem> layout_children(sd_bus* bus, const TrayIcon& icon, int parent) {
     std::vector<TrayMenuItem> items;
-    if (!m_bus || icon.menu_path.empty())
+    if (!bus || icon.menu_path.empty())
         return items;
     sd_bus_error    error = SD_BUS_ERROR_NULL;
     sd_bus_message* shown = nullptr;
-    sd_bus_call_method(m_bus->bus, icon.service.c_str(), icon.menu_path.c_str(), "com.canonical.dbusmenu", "AboutToShow", &error, &shown, "i", 0);
+    sd_bus_call_method(bus, icon.service.c_str(), icon.menu_path.c_str(), "com.canonical.dbusmenu", "AboutToShow", &error, &shown, "i", parent);
     sd_bus_error_free(&error);
     sd_bus_message_unref(shown);
-    const char*     names[] = {"label", "type", "enabled", "visible"};
+    const char*     names[] = {"label", "type", "enabled", "visible", "children-display"};
     sd_bus_message* reply   = nullptr;
     error                   = SD_BUS_ERROR_NULL;
     sd_bus_message* call    = nullptr;
-    if (sd_bus_message_new_method_call(m_bus->bus, &call, icon.service.c_str(), icon.menu_path.c_str(), "com.canonical.dbusmenu", "GetLayout") < 0)
+    if (sd_bus_message_new_method_call(bus, &call, icon.service.c_str(), icon.menu_path.c_str(), "com.canonical.dbusmenu", "GetLayout") < 0)
         return items;
-    sd_bus_message_append(call, "ii", 0, -1);
+    sd_bus_message_append(call, "ii", parent, -1);
     sd_bus_message_open_container(call, 'a', "s");
     for (const char* name : names)
         sd_bus_message_append(call, "s", name);
     sd_bus_message_close_container(call);
-    if (sd_bus_call(m_bus->bus, call, 0, &error, &reply) < 0) {
+    if (sd_bus_call(bus, call, 0, &error, &reply) < 0) {
         sd_bus_message_unref(call);
         sd_bus_error_free(&error);
         return items;
@@ -270,9 +276,23 @@ std::vector<TrayMenuItem> StatusTray::menu_items(const TrayIcon& icon) {
     sd_bus_message_unref(reply);
     if (!root.children.empty())
         return root.children;
+    if (parent != 0)
+        return items;
     if (root.separator || !root.label.empty())
         items.push_back(std::move(root));
     return items;
+}
+
+std::vector<TrayMenuItem> StatusTray::menu_items(const TrayIcon& icon) {
+    if (!m_bus)
+        return {};
+    return layout_children(m_bus->bus, icon, 0);
+}
+
+std::vector<TrayMenuItem> StatusTray::submenu_items(const TrayIcon& icon, int id) {
+    if (!m_bus)
+        return {};
+    return layout_children(m_bus->bus, icon, id);
 }
 
 void StatusTray::activate_menu_item(const TrayIcon& icon, int id) {

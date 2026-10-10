@@ -10,6 +10,7 @@ struct TrayMenuItem {
     std::string                label;
     bool                       separator = false;
     bool                       enabled   = true;
+    bool                       submenu   = false;
     std::vector<TrayMenuItem>  children;
 };
 
@@ -41,6 +42,7 @@ class StatusTray {
     void                      context(const TrayIcon& icon, int x, int y);
     void                      scroll(const TrayIcon& icon, int delta, const char* orientation);
     std::vector<TrayMenuItem> menu_items(const TrayIcon& icon);
+    std::vector<TrayMenuItem> submenu_items(const TrayIcon& icon, int id);
     void                      activate_menu_item(const TrayIcon& icon, int id);
     void                      register_item(const std::string& argument, const std::string& sender);
     void                      drop_service(const std::string& service);
