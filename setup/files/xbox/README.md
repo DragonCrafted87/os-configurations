@@ -1,6 +1,7 @@
 # Xbox Elite + wireless dongle
 
-`configure-xbox-controller` installs:
+`configure-xbox-controller` installs the dongle stack and then runs
+`configure-xbox-bluetooth`:
 
 - `xone` (DKMS) — official Xbox Wireless Adapter and USB GIP devices
 - dongle firmware extracted from Microsoft's Windows driver
@@ -31,15 +32,19 @@ the game already understands an Xbox pad.
 
 ## Bluetooth instead of the dongle
 
-Use this on the laptop or when the adapter is not plugged in. Pair in
-blueman / `bluetoothctl`. `xpadneo` exposes paddles on the default Elite
-profile (no profile LED). Profiles copied from the Windows Xbox
-Accessories app still apply.
+`[htpc]` runs `configure-xbox-bluetooth`. That installs `xpadneo` and
+does not install the dongle driver. `configure-bluetooth-login` sets
+`Privacy=device`, which is what a firmware 5.x pad needs in order to
+reconnect after pairing.
+
+Pair in blueman / `bluetoothctl`. `xpadneo` exposes paddles on the
+default Elite profile (no profile LED). Profiles copied from the
+Windows Xbox Accessories app still apply.
 
 Do not pair the same pad over Bluetooth and the dongle at the same time.
 
 ## Skip xpadneo
 
 ```bash
-XBOX_INSTALL_XPADNEO=0 ~/dot-files/setup/modules/desktop/configure-xbox-controller.sh
+XBOX_INSTALL_XPADNEO=0 ./setup/modules/desktop/configure-xbox-controller.sh
 ```
