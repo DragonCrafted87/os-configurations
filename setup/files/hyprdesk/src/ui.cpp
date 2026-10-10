@@ -237,6 +237,7 @@ class DeskUi {
     CSharedPointer<IWindow>               m_tray_popup;
     TrayIcon                              m_tray_popup_icon;
     std::vector<std::vector<TrayMenuItem>> m_tray_menu_stack;
+    bool                                  m_tray_hover_queued = false;
     CSharedPointer<CColumnLayoutElement>  m_menu_layout;
     CSharedPointer<CTextboxElement>       m_search_box;
     CSharedPointer<CTextElement>          m_clock;
@@ -456,8 +457,9 @@ void DeskUi::hide_osd() {
 }
 
 void DeskUi::close_menu() {
-    m_menu_open = false;
-    m_pinned    = false;
+    m_menu_open         = false;
+    m_tray_hover_queued = false;
+    m_pinned            = false;
     m_category.clear();
     if (m_menu)
         m_menu->close();
@@ -1039,6 +1041,7 @@ void DeskUi::open_tray_menu(const TrayIcon& icon) {
 }
 
 void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
+    m_tray_hover_queued = false;
     if (m_tray_popup)
         m_tray_popup->close();
     const int row_h  = 28;
@@ -1112,12 +1115,22 @@ void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
                           ->commence();
         if (item.submenu) {
             button->setReceivesMouse(true);
+            // Closing this popup inside the enter callback frees the element
+            // updateFocus is still walking, and scheduleReposition segfaults.
             button->setMouseEnter([this, item, items](const Vector2D&) {
-                auto kids = item.children.empty() ? m_tray.submenu_items(m_tray_popup_icon, item.id) : item.children;
-                if (kids.empty())
+                if (m_tray_hover_queued || !m_menu_open)
                     return;
-                m_tray_menu_stack.push_back(items);
-                show_tray_menu(kids);
+                m_tray_hover_queued = true;
+                m_backend->addIdle([this, item, items] {
+                    m_tray_hover_queued = false;
+                    if (!m_menu_open)
+                        return;
+                    auto kids = item.children.empty() ? m_tray.submenu_items(m_tray_popup_icon, item.id) : item.children;
+                    if (kids.empty())
+                        return;
+                    m_tray_menu_stack.push_back(items);
+                    show_tray_menu(kids);
+                });
             });
         }
         column->addChild(button);
