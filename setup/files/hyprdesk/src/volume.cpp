@@ -12,6 +12,23 @@ double round_to(double value, double step) {
     return std::round(value / step) * step;
 }
 
+// wpctl prints two decimals, so a 0.725 sink comes back as 0.73.
+std::string format_step_percent(double level) {
+    const int steps  = static_cast<int>(std::lround(snap_volume(level) / kStep));
+    const int tenths = steps * 25;
+    std::ostringstream text;
+    text.setf(std::ios::fixed);
+    if (tenths % 10 == 0) {
+        text.precision(0);
+        text << (tenths / 10);
+    } else {
+        text.precision(1);
+        text << (static_cast<double>(tenths) / 10.0);
+    }
+    text << "%";
+    return text.str();
+}
+
 } // namespace
 
 double snap_volume(double value) {
@@ -29,22 +46,17 @@ double snap_volume(double value) {
 double volume_fill(const Volume& volume) {
     if (!volume.valid || volume.muted)
         return 0;
-    return std::max(0.0, std::min(1.0, volume.level / kMax));
+    return std::max(0.0, std::min(1.0, snap_volume(volume.level) / kMax));
 }
 
 bool volume_overdrive(const Volume& volume) {
-    return volume.valid && !volume.muted && volume.level > 1.0;
+    return volume.valid && !volume.muted && snap_volume(volume.level) > 1.0;
 }
 
 std::string osd_label(const Volume& volume) {
     if (!volume.valid || volume.muted)
         return "MUTE";
-    const double shown = std::round(volume.level * 1000.0) / 10.0;
-    std::ostringstream text;
-    text.setf(std::ios::fixed);
-    text.precision(shown == std::trunc(shown) ? 0 : 1);
-    text << shown << "%";
-    return text.str();
+    return format_step_percent(volume.level);
 }
 
 std::string menu_volume_caption(const Volume& volume) {
@@ -56,12 +68,9 @@ std::string menu_volume_caption(const Volume& volume) {
 std::string menu_volume_percent(const Volume& volume) {
     if (!volume.valid)
         return "--%";
-    const double shown = volume.muted ? 0 : std::round(volume.level * 1000.0) / 10.0;
-    std::ostringstream text;
-    text.setf(std::ios::fixed);
-    text.precision(shown == std::trunc(shown) ? 0 : 1);
-    text << shown << "%";
-    return text.str();
+    if (volume.muted)
+        return "0%";
+    return format_step_percent(volume.level);
 }
 
 Volume parse_wpctl(const std::string& text) {

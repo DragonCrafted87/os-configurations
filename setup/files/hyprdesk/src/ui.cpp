@@ -19,6 +19,8 @@
 
 #include <xkbcommon/xkbcommon-keysyms.h>
 
+#include <pango/pangocairo.h>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -52,6 +54,30 @@ CDynamicSize bar_size(float width, float height) {
 
 CDynamicSize box_size(float width, float height) {
     return {CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_ABSOLUTE, {width, height}};
+}
+
+struct LabelExtent {
+    float width  = 1.F;
+    float height = 18.F;
+};
+
+LabelExtent measure_label(const std::string& text, const std::string& family, float pt) {
+    PangoFontMap*         map     = pango_cairo_font_map_get_default();
+    PangoContext*         context = pango_font_map_create_context(map);
+    PangoLayout*          layout  = pango_layout_new(context);
+    PangoFontDescription* desc    = pango_font_description_from_string(family.empty() ? "Sans Serif" : family.c_str());
+    pango_font_description_set_size(desc, static_cast<int>(std::lround(pt)) * PANGO_SCALE);
+    pango_layout_set_font_description(layout, desc);
+    pango_font_description_free(desc);
+    pango_layout_set_text(layout, text.c_str(), static_cast<int>(text.size()));
+    PangoRectangle logical{};
+    pango_layout_get_pixel_extents(layout, nullptr, &logical);
+    g_object_unref(layout);
+    g_object_unref(context);
+    LabelExtent extent;
+    extent.width  = static_cast<float>(std::max(logical.width, 1));
+    extent.height = static_cast<float>(std::max(logical.height, 1));
+    return extent;
 }
 
 CDynamicSize fill_auto() {
@@ -224,15 +250,26 @@ void DeskUi::toggle_mute() {
 }
 
 void DeskUi::show_osd() {
-    // "112.5%" is the widest step. A 44px window left ~28px after the margin.
-    constexpr float osd_w   = 96.F;
-    constexpr float osd_h   = 220.F;
-    constexpr float track_w = 20.F;
-    constexpr float track_h = 168.F;
+    constexpr float osd_h      = 220.F;
+    constexpr float track_h    = 168.F;
+    constexpr float fill_inset = 3.F;
+    constexpr float panel_pad  = 8.F;
 
-    // A new layer on every step leaves the previous surface up until the
-    // compositor destroys it, so the overlay looks doubled.
+    const std::string label  = osd_label(m_volume);
+    const std::string family = m_palette->m_vars.fontFamily;
+    const float       pt     = static_cast<float>(m_palette->m_vars.smallFontSize);
+    const LabelExtent extent = measure_label(label, family, pt);
+    const float       track_w = extent.width;
+
+    // One layer for the life of the process. Replacing it on each step
+    // leaves the previous surface up until the compositor destroys it.
     if (!m_osd) {
+        float widest = track_w;
+        for (const char* sample : {"112.5%", "147.5%", "72.5%", "150%", "MUTE"})
+            widest = std::max(widest, measure_label(sample, family, pt).width);
+        // 72 is about three quarters of the old 96px panel. Grow if a
+        // label would touch the pad.
+        const float osd_w = std::max(72.F, widest + (panel_pad * 2.F));
         auto background = CRectangleBuilder::begin()
                               ->color([this] { return m_palette->m_colors.background; })
                               ->borderColor([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.alternateBase; })
@@ -241,15 +278,17 @@ void DeskUi::show_osd() {
                               ->size(percent_box(1, 1))
                               ->commence();
         auto column = CColumnLayoutBuilder::begin()->gap(6)->size(percent_box(1, 1))->commence();
-        column->setMargin(8);
+        column->setMargin(panel_pad);
         m_osd_label = CTextBuilder::begin()
-                          ->text(osd_label(m_volume))
+                          ->text(std::string{label})
                           ->align(HT_FONT_ALIGN_CENTER)
                           ->fontSize({CFontSize::HT_FONT_SMALL, 1.F})
+                          ->fontFamily(std::string{family})
                           ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.text; })
-                          ->noEllipsize(true)
-                          ->size(box_size(osd_w - 16.F, 22.F))
+                          ->async(false)
+                          ->size(box_size(track_w, extent.height))
                           ->commence();
+        m_osd_label->setPositionFlag(IElement::HT_POSITION_FLAG_HCENTER, true);
         m_osd_track = CRectangleBuilder::begin()
                           ->color([this] { return m_palette->m_colors.base; })
                           ->borderColor([this] { return m_palette->m_colors.alternateBase; })
@@ -274,18 +313,23 @@ void DeskUi::show_osd() {
         m_osd->m_rootElement->addChild(background);
     }
 
-    m_osd_label->setText(osd_label(m_volume));
+    m_osd_label->rebuild()->text(std::string{label})->size(box_size(track_w, extent.height))->commence();
+    m_osd_track->rebuild()->size(box_size(track_w, track_h))->commence();
     m_osd_track->clearChildren();
-    const float fill  = static_cast<float>(volume_fill(m_volume));
-    const float bar_h = std::round(std::min(track_h, std::max(0.F, fill * track_h)));
-    if (bar_h >= 1.F) {
+    const float fill    = static_cast<float>(volume_fill(m_volume));
+    const float inner_w = std::max(0.F, track_w - (2.F * fill_inset));
+    const float inner_h = std::max(0.F, track_h - (2.F * fill_inset));
+    const float bar_h   = std::round(std::min(inner_h, std::max(0.F, fill * inner_h)));
+    if (bar_h >= 1.F && inner_w >= 1.F) {
         auto bar = CRectangleBuilder::begin()
                        ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.accent; })
-                       ->rounding(6)
-                       ->size(box_size(track_w, bar_h))
+                       ->rounding(5)
+                       ->size(box_size(inner_w, bar_h))
                        ->commence();
         bar->setPositionMode(IElement::HT_POSITION_ABSOLUTE);
+        bar->setPositionFlag(IElement::HT_POSITION_FLAG_LEFT, true);
         bar->setPositionFlag(IElement::HT_POSITION_FLAG_BOTTOM, true);
+        bar->setAbsolutePosition({fill_inset, -fill_inset});
         m_osd_track->addChild(bar);
     }
     m_osd->open();

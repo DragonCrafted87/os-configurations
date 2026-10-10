@@ -12,6 +12,7 @@ find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 pkg_check_modules(DEPS REQUIRED IMPORTED_TARGET hyprtoolkit)
 pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
+pkg_check_modules(PANGO REQUIRED IMPORTED_TARGET pangocairo)
 
 add_executable(hyprdesk
     src/main.cpp
@@ -25,6 +26,6 @@ add_executable(hyprdesk
     src/ui.cpp
     src/self_test.cpp)
 target_compile_definitions(hyprdesk PRIVATE HYPRDESK_VERSION="${HYPRDESK_VERSION}")
-target_link_libraries(hyprdesk PRIVATE PkgConfig::DEPS PkgConfig::SYSTEMD Threads::Threads)
+target_link_libraries(hyprdesk PRIVATE PkgConfig::DEPS PkgConfig::SYSTEMD PkgConfig::PANGO Threads::Threads)
 
 install(TARGETS hyprdesk)
