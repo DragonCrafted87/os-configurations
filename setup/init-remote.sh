@@ -49,6 +49,9 @@ fi
 if [[ ! -e ~/dot-files ]]; then
     ln -sfn ~/git-workspace/homelab/dot-files ~/dot-files
 fi
+if [[ ! -e ~/machine-setup ]]; then
+    ln -sfn ~/git-workspace/homelab/machine-setup ~/machine-setup
+fi
 dots="\$(realpath ~/git-workspace/homelab/dot-files)"
 setup="\$(realpath ~/git-workspace/homelab/machine-setup)"
 EOF

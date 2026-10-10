@@ -8,17 +8,40 @@ set -euo pipefail
 
 require_user
 
-# wxGTK does not honor gtk-application-prefer-dark-theme alone.
-# GTK_THEME=Adwaita:dark plus ~/.config/gtk-3.0/gtk.css is Tango Dark.
+# wxGTK ignores gtk-application-prefer-dark-theme. The launcher sets
+# GTK_THEME. make install writes boinc.desktop; a second filename is a
+# second BOINC Manager. Replace that file and drop boincmgr.desktop.
 install_manager_desktop() {
-    local src="${SETUP_FILES_DIR}/boinc/boincmgr.desktop"
-    local dest_user="${DOTFILES_HOME}/.local/share/applications/boincmgr.desktop"
-    local dest_sys=/usr/local/share/applications/boincmgr.desktop
-    ensure_dir "$(dirname "$dest_user")"
-    run sudo mkdir -p "$(dirname "$dest_sys")"
-    if [[ -f "$src" ]]; then
-        install -m 0644 "$src" "$dest_user"
-        run sudo install -m 0644 "$src" "$dest_sys"
+    local src="${SETUP_FILES_DIR}/boinc/boinc.desktop"
+    local apps="${BOINC_PREFIX:-/usr/local}/share/applications"
+    local dest="${apps}/boinc.desktop"
+    local user_stale="${DOTFILES_HOME}/.local/share/applications/boincmgr.desktop"
+    local sys_stale="${apps}/boincmgr.desktop"
+    local changed=0
+    if [[ ! -f "$src" ]]; then
+        return 0
+    fi
+    run sudo mkdir -p "$apps"
+    if [[ ! -f "$dest" ]] || ! cmp -s "$src" "$dest"; then
+        run sudo install -m 0644 "$src" "$dest"
+        changed=1
+    fi
+    if [[ -e "$user_stale" ]]; then
+        run rm -f "$user_stale"
+        changed=1
+    fi
+    if [[ -e "$sys_stale" ]]; then
+        run sudo rm -f "$sys_stale"
+        changed=1
+    fi
+    if [[ "$changed" -eq 0 || "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        return 0
+    fi
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "$apps" >/dev/null 2>&1 || true
+        if [[ -d "${DOTFILES_HOME}/.local/share/applications" ]]; then
+            update-desktop-database "${DOTFILES_HOME}/.local/share/applications" >/dev/null 2>&1 || true
+        fi
     fi
 
     local icon_src="${SETUP_FILES_DIR}/boinc/boinc.png"

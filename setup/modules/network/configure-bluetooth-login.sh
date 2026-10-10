@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Bring Bluetooth up before ly so a paired keyboard works on the login
 # screen. Also apply the common BlueZ knobs that avoid
-# br-connection-create-socket on reconnect.
+# br-connection-create-socket on reconnect. Privacy=device lets an
+# Xbox pad on firmware 5.x reconnect after pairing. Without it the pad
+# only sends a non-connectable beacon.
 
 set -euo pipefail
 # shellcheck disable=SC1091
@@ -85,6 +87,7 @@ PY
 }
 
 main_conf="/etc/bluetooth/main.conf"
+set_ini_key "$main_conf" General Privacy device
 set_ini_key "$main_conf" General FastConnectable true
 set_ini_key "$main_conf" General JustWorksRepairing always
 set_ini_key "$main_conf" General Experimental true
