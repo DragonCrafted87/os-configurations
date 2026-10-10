@@ -6,12 +6,13 @@
 #include <vector>
 
 struct Monitor {
-    int  x         = 0;
-    int  y         = 0;
-    int  width     = 1920;
-    int  height    = 1080;
-    int  workspace = 1;
-    bool focused   = false;
+    int         x                = 0;
+    int         y                = 0;
+    int         width            = 1920;
+    int         height           = 1080;
+    int         workspace        = 1;
+    std::string workspace_name   = "1";
+    bool        focused          = false;
 };
 
 struct Placement {
@@ -19,7 +20,8 @@ struct Placement {
     int  menu_top        = 8;
     int  menu_w          = 380;
     int  menu_h          = 280;
-    int  workspace       = 1;
+    int         workspace      = 1;
+    std::string workspace_name = "1";
     int  monitor_w       = 1920;
     int  monitor_h       = 1080;
     bool flyout_on_left  = false;

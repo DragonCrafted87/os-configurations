@@ -28,6 +28,23 @@ std::optional<double> field_number(const std::string& object, const std::string&
     }
 }
 
+std::string field_string(const std::string& object, const std::string& key) {
+    const std::string pattern = "\"" + key + "\"";
+    const auto        at      = object.find(pattern);
+    if (at == std::string::npos)
+        return "";
+    auto colon = object.find(':', at + pattern.size());
+    if (colon == std::string::npos)
+        return "";
+    auto quote = object.find('"', colon + 1);
+    if (quote == std::string::npos)
+        return "";
+    auto end = object.find('"', quote + 1);
+    if (end == std::string::npos)
+        return "";
+    return object.substr(quote + 1, end - quote - 1);
+}
+
 bool field_bool(const std::string& object, const std::string& key) {
     const std::string pattern = "\"" + key + "\"";
     const auto        at      = object.find(pattern);
@@ -126,8 +143,14 @@ std::vector<Monitor> parse_monitors(const std::string& json) {
         monitor.focused = field_bool(object, "focused");
         auto workspace   = object.find("\"activeWorkspace\"");
         if (workspace != std::string::npos) {
-            if (auto id = field_number(object.substr(workspace), "id"))
+            const auto block = object.substr(workspace);
+            if (auto id = field_number(block, "id"))
                 monitor.workspace = static_cast<int>(*id);
+            const auto name = field_string(block, "name");
+            if (!name.empty())
+                monitor.workspace_name = name;
+            else
+                monitor.workspace_name = std::to_string(monitor.workspace);
         }
         if (monitor.width <= 0)
             monitor.width = 1920;
@@ -143,9 +166,17 @@ Placement place_menu(int cursor_x, int cursor_y, const std::vector<Monitor>& mon
     place.menu_h = std::max(280, menu_h);
     const Monitor* monitor = nullptr;
     for (const auto& candidate : monitors) {
-        if (candidate.focused) {
+        if (cursor_x >= candidate.x && cursor_x < candidate.x + candidate.width && cursor_y >= candidate.y && cursor_y < candidate.y + candidate.height) {
             monitor = &candidate;
             break;
+        }
+    }
+    if (!monitor) {
+        for (const auto& candidate : monitors) {
+            if (candidate.focused) {
+                monitor = &candidate;
+                break;
+            }
         }
     }
     if (!monitor && !monitors.empty())
@@ -155,7 +186,8 @@ Placement place_menu(int cursor_x, int cursor_y, const std::vector<Monitor>& mon
 
     place.monitor_w = monitor->width;
     place.monitor_h = monitor->height;
-    place.workspace = monitor->workspace > 0 ? monitor->workspace : 1;
+    place.workspace = monitor->workspace;
+    place.workspace_name = monitor->workspace_name.empty() ? std::to_string(monitor->workspace) : monitor->workspace_name;
     place.menu_w    = menu_width_for(monitor->width);
     place.menu_h    = std::max(280, std::min(std::max(280, monitor->height - 16), place.menu_h));
 

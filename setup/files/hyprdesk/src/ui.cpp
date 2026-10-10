@@ -121,6 +121,11 @@ void hypr_dispatch(const std::string& expression) {
     run_detached({hyprctl_bin(), "dispatch", expression});
 }
 
+std::string workspace_lua(const Placement& place) {
+    const std::string name = place.workspace_name.empty() ? std::to_string(place.workspace) : place.workspace_name;
+    return lua_quote(name);
+}
+
 CDynamicSize fill_auto() {
     return {CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_AUTO, {1.F, 0.F}};
 }
@@ -415,10 +420,9 @@ void DeskUi::restore_client(const Client& client) {
     if (!safe_window_address(client.address))
         return;
     const std::string window = lua_quote("address:" + client.address);
-    hypr_dispatch("hl.dsp.window.move({ workspace = " + std::to_string(m_place.workspace) + ", window = " + window + " })");
+    const std::string ws     = workspace_lua(m_place);
+    hypr_dispatch("hl.dsp.window.move({ workspace = " + ws + ", window = " + window + " })");
     hypr_dispatch("hl.dsp.focus({ window = " + window + " })");
-    if (is_minimized_workspace(client.workspace))
-        hypr_dispatch("hl.dsp.workspace.toggle_special(\"minimized\")");
     m_backend->addIdle([this] { close_menu(); });
 }
 
@@ -451,8 +455,10 @@ void DeskUi::launch(const DesktopEntry& entry) {
                 continue;
             if (!safe_window_address(client.address))
                 continue;
-            run_detached({hyprctl_bin(), "dispatch", "movetoworkspace", std::to_string(m_place.workspace) + ",address:" + client.address});
-            run_detached({hyprctl_bin(), "dispatch", "focuswindow", "address:" + client.address});
+            const std::string window = lua_quote("address:" + client.address);
+            const std::string ws     = workspace_lua(m_place);
+            hypr_dispatch("hl.dsp.window.move({ workspace = " + ws + ", window = " + window + " })");
+            hypr_dispatch("hl.dsp.focus({ window = " + window + " })");
             m_backend->addIdle([this] { close_menu(); });
             return;
         }
@@ -460,8 +466,9 @@ void DeskUi::launch(const DesktopEntry& entry) {
     const std::string command = strip_exec_field_codes(entry.exec);
     if (command.find_first_not_of(" \t") == std::string::npos)
         return;
-    hypr_dispatch("hl.dsp.focus({ workspace = " + std::to_string(m_place.workspace) + " })");
-    hypr_dispatch("hl.dsp.exec_cmd(" + lua_quote(command) + ")");
+    const std::string ws = workspace_lua(m_place);
+    hypr_dispatch("hl.dsp.focus({ workspace = " + ws + " })");
+    hypr_dispatch("hl.dsp.exec_cmd(" + lua_quote(command) + ", { workspace = " + ws + " })");
     m_backend->addIdle([this] { close_menu(); });
 }
 
@@ -510,7 +517,9 @@ void DeskUi::rebuild_flyout() {
     scroll->addChild(list);
     column->addChild(scroll);
     background->addChild(column);
-    const int height = std::max(80, m_place.monitor_h - m_place.menu_top - 8);
+    const int count   = apps.empty() ? 1 : static_cast<int>(std::min(apps.size(), static_cast<size_t>(400)));
+    const int natural = 16 + 8 + 4 + count * 36 + 16;
+    const int height  = std::min(std::max(80, m_place.menu_h), std::max(80, natural));
     m_flyout         = CWindowBuilder::begin()
                    ->type(HT_WINDOW_LAYER)
                    ->appClass("hyprdesk-flyout")
@@ -607,7 +616,11 @@ void DeskUi::rebuild_menu() {
         upper->addChild(button);
     }
 
-    upper->addChild(rule());
+    auto scroller = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, 1))->commence();
+    scroller->setGrow(false, true);
+    scroller->addChild(upper);
+    m_menu_layout->addChild(scroller);
+    m_menu_layout->addChild(rule());
     auto header = CRowLayoutBuilder::begin()->gap(8)->size(bar_size(1, 28))->commence();
     header->setReceivesMouse(true);
     header->setMouseEnter(below_categories);
@@ -647,7 +660,7 @@ void DeskUi::rebuild_menu() {
     refresh_button->setReceivesMouse(true);
     refresh_button->setMouseEnter(below_categories);
     header->addChild(refresh_button);
-    upper->addChild(header);
+    m_menu_layout->addChild(header);
 
     const float window_h = windows.empty() ? 28.F : std::min<float>(static_cast<float>(windows.size()), 6.F) * 44.F;
     auto window_scroll = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, window_h))->commence();
@@ -691,7 +704,7 @@ void DeskUi::rebuild_menu() {
         window_list->addChild(row);
     }
     window_scroll->addChild(window_list);
-    upper->addChild(window_scroll);
+    m_menu_layout->addChild(window_scroll);
 
     m_tray.refresh();
     if (!m_tray.items().empty()) {
@@ -735,11 +748,11 @@ void DeskUi::rebuild_menu() {
         }
         tray_row->setReceivesMouse(true);
         tray_row->setMouseEnter(below_categories);
-        upper->addChild(rule());
-        upper->addChild(tray_row);
+        m_menu_layout->addChild(rule());
+        m_menu_layout->addChild(tray_row);
     }
 
-    upper->addChild(rule());
+    m_menu_layout->addChild(rule());
     auto volume_row = CRowLayoutBuilder::begin()->gap(8)->size(bar_size(1, 28))->commence();
     volume_row->setReceivesMouse(true);
     volume_row->setMouseEnter(below_categories);
@@ -789,13 +802,13 @@ void DeskUi::rebuild_menu() {
                            ->size(box_size(56, 28))
                            ->commence();
     volume_row->addChild(m_volume_readout);
-    upper->addChild(volume_row);
+    m_menu_layout->addChild(volume_row);
 
     m_stats = read_stats(m_cpu);
     m_cpu   = read_cpu_sample();
     const std::string status = m_stats.cpu + "  " + m_stats.mem + "  " + m_stats.gpu + "  " + m_stats.net;
     const float status_w = std::max(1.F, measure_label(wide_status_line(m_stats), m_palette->m_vars.fontFamily, static_cast<float>(m_palette->m_vars.fontSize)).width);
-    upper->addChild(rule());
+    m_menu_layout->addChild(rule());
     m_stats_text = CTextBuilder::begin()->text(std::string{status})->async(false)->size(box_size(status_w, 22))->commence();
     m_stats_text->setReceivesMouse(true);
     m_stats_text->setMouseEnter(below_categories);
@@ -804,23 +817,18 @@ void DeskUi::rebuild_menu() {
                   ->async(false)
                   ->fontSize({CFontSize::HT_FONT_H1, 1.F})
                   ->color([this] { return m_palette->m_colors.accent; })
-                  ->size(bar_size(1, 28))
+                  ->size(bar_size(1, 36))
                   ->commence();
     m_date = CTextBuilder::begin()
                  ->text(std::string{m_stats.date})
                  ->async(false)
                  ->fontSize({CFontSize::HT_FONT_H1, 1.F})
                  ->color([this] { return m_palette->m_colors.accent; })
-                 ->size(bar_size(1, 28))
+                 ->size(bar_size(1, 36))
                  ->commence();
-    upper->addChild(m_stats_text);
-    upper->addChild(m_clock);
-    upper->addChild(m_date);
-
-    auto scroller = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, 1))->commence();
-    scroller->setGrow(false, true);
-    scroller->addChild(upper);
-    m_menu_layout->addChild(scroller);
+    m_menu_layout->addChild(m_stats_text);
+    m_menu_layout->addChild(m_clock);
+    m_menu_layout->addChild(m_date);
 
     auto power_row = CRowLayoutBuilder::begin()->gap(4)->size(bar_size(1, 40))->commence();
     power_row->setReceivesMouse(true);
@@ -1011,8 +1019,7 @@ void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
                               if (!item.enabled)
                                   return;
                               m_tray.activate_menu_item(m_tray_popup_icon, item.id);
-                              if (m_tray_popup)
-                                  m_tray_popup->close();
+                              m_backend->addIdle([this] { close_menu(); });
                           })
                           ->commence();
         column->addChild(button);

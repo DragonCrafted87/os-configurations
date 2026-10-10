@@ -63,10 +63,12 @@ bool run_self_test() {
     auto monitors = parse_monitors(monitors_json);
     EXPECT(monitors.size() == 2);
     EXPECT(monitors[0].focused && monitors[0].workspace == 3);
+    EXPECT(monitors[0].workspace_name == "3");
     EXPECT(monitors[1].x == 1920 && !monitors[1].focused);
     auto placed = place_menu(100, 200, monitors, 500);
     EXPECT(placed.menu_left == 100 && placed.menu_top == 200);
     EXPECT(placed.workspace == 3);
+    EXPECT(placed.workspace_name == "3");
     EXPECT(placed.menu_w == 422);
     EXPECT(!placed.flyout_on_left);
     auto edge = place_menu(1900, 1000, monitors, 400);
@@ -74,7 +76,14 @@ bool run_self_test() {
     EXPECT(edge.menu_top == 1080 - edge.menu_h - 8);
     EXPECT(edge.flyout_on_left);
     auto other = place_menu(2000, 10, monitors, 400);
-    EXPECT(other.monitor_w == 1920);
+    EXPECT(other.monitor_w == 1280);
+    EXPECT(other.workspace == 2 && other.workspace_name == "2");
+    const char* named_json =
+        R"([{"id":0,"name":"A","x":0,"y":0,"width":1920,"height":1080,"focused":true,"activeWorkspace":{"id":-1337,"name":"code-1"}}])";
+    auto named = parse_monitors(named_json);
+    EXPECT(named.size() == 1 && named[0].workspace == -1337 && named[0].workspace_name == "code-1");
+    auto named_place = place_menu(20, 20, named, 400);
+    EXPECT(named_place.workspace == -1337 && named_place.workspace_name == "code-1");
     auto popup = clamp_on_output(100, 120, 240, 80, monitors);
     EXPECT(popup.left == 100 && popup.top == 120);
     auto popup_edge = clamp_on_output(1900, 1000, 240, 200, monitors);

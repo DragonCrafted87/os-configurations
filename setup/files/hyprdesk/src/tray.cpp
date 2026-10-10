@@ -2,6 +2,7 @@
 
 #include <systemd/sd-bus.h>
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 
@@ -277,16 +278,23 @@ std::vector<TrayMenuItem> StatusTray::menu_items(const TrayIcon& icon) {
 void StatusTray::activate_menu_item(const TrayIcon& icon, int id) {
     if (!m_bus || icon.menu_path.empty())
         return;
-    sd_bus_message* call  = nullptr;
     sd_bus_error    error = SD_BUS_ERROR_NULL;
+    sd_bus_message* shown = nullptr;
+    sd_bus_call_method(m_bus->bus, icon.service.c_str(), icon.menu_path.c_str(), "com.canonical.dbusmenu", "AboutToShow", &error, &shown, "i", id);
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(shown);
+    sd_bus_message* call  = nullptr;
     sd_bus_message* reply = nullptr;
+    error                 = SD_BUS_ERROR_NULL;
     if (sd_bus_message_new_method_call(m_bus->bus, &call, icon.service.c_str(), icon.menu_path.c_str(), "com.canonical.dbusmenu", "Event") < 0)
         return;
+    // KDE Connect ignores a clicked event whose data variant is an int.
     sd_bus_message_append(call, "is", id, "clicked");
-    sd_bus_message_open_container(call, 'v', "i");
-    sd_bus_message_append(call, "i", 0);
+    sd_bus_message_open_container(call, 'v', "s");
+    sd_bus_message_append(call, "s", "");
     sd_bus_message_close_container(call);
-    sd_bus_message_append(call, "u", 0);
+    const auto now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    sd_bus_message_append(call, "u", now);
     sd_bus_call(m_bus->bus, call, 0, &error, &reply);
     sd_bus_message_unref(call);
     sd_bus_message_unref(reply);

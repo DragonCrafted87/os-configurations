@@ -42,10 +42,10 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 1. The flyout SHALL show each matching app by name. An empty result SHALL
    say that no apps match.
 1. A left click on an app SHALL focus a window that is already open for
-   that app, on the workspace that was current when the menu opened.
-   Otherwise it SHALL launch the app there.
-1. The flyout SHALL scroll when the list is taller than the monitor
-   allows.
+   that app and move it to the workspace that was current on the monitor
+   under the menu. Otherwise it SHALL launch the app on that workspace.
+1. The flyout SHALL be no taller than its rows, and SHALL NOT be taller
+   than the menu. It SHALL scroll when the rows still do not fit.
 
 ## Windows
 
@@ -55,8 +55,9 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
    list SHALL show every window instead.
 1. Min and All SHALL switch that filter. Refresh SHALL reread the clients.
    The Refresh label SHALL stay on one line.
-1. A left click SHALL restore that window onto the workspace that was
-   current when the menu opened, then close the menu.
+1. A left click SHALL move that window onto the workspace that was
+   current on the monitor under the menu, then close the menu. The
+   minimized workspace SHALL NOT be shown.
 1. A right click SHALL close that window.
 1. An empty list SHALL say so. A long title SHALL ellipsize instead of
    stretching the menu.
@@ -70,6 +71,8 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
    SHALL be only as large as its entries, and it SHALL stay on the
    monitor under the pointer.
 1. A submenu SHALL replace the popup contents and SHALL offer Back.
+1. A left click on a menu entry that is not a submenu SHALL close the
+   start menu.
 1. When the item has no menu layout, a fallback to the item's own context
    menu at the pointer is OPTIONAL.
 
@@ -83,13 +86,16 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 1. The mute control SHALL toggle mute. Muted SHALL read MUTE on the
    control and `0%` on the percent.
 1. Above 100% the percent SHALL use the overdrive red.
-1. Moving this slider SHALL NOT show the volume overlay.
+1. Moving this slider SHALL NOT show the volume overlay. Scrolling it
+   SHALL NOT scroll the menu.
 
 ## Clock and power
 
 1. The menu SHALL show CPU, memory, GPU, and network, then the clock and
-   the date. The clock and the date SHALL use the same font size. The
-   status line SHALL stay fully visible when those values change width.
+   the date. The clock and the date SHALL use the same font size, and
+   both SHALL stay fully visible when the menu is against the bottom of
+   the screen. The status line SHALL stay fully visible when those
+   values change width.
 1. The power row SHALL be the bottom row of the menu. It SHALL show
    lock, logout, suspend, reboot, and shutdown, each wide enough to
    read, in that order.
