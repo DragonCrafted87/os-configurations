@@ -9,6 +9,7 @@ Wants=workstation-steam.service
 Wants=workstation-discord.service
 Wants=workstation-litra.service
 Wants=workstation-kdeconnect.service
+Wants=ntfy-workstations.service
 
 [Install]
 WantedBy=graphical-session.target

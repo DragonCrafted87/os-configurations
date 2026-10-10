@@ -24,8 +24,9 @@ if [[ ! -f "$list" ]]; then
 fi
 
 ssh_cmd() {
+    # -n so mkdir does not consume the secrets list this loop is reading.
     # shellcheck disable=SC2086
-    ssh ${DOTFILES_SSH_OPTS:-} -o ForwardX11=no "$@"
+    ssh -n ${DOTFILES_SSH_OPTS:-} -o ForwardX11=no "$@"
 }
 
 scp_cmd() {

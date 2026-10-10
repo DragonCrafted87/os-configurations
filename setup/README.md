@@ -43,7 +43,10 @@ and sshd:
 
 1. Installs this computer's SSH public keys on the new box
 1. Copies the secrets list onto the new box
-1. Installs `git` and `curl` on the new box
+1. Installs `git` and `curl` on the new box, and writes
+   `/etc/sudoers.d/<user>` with `NOPASSWD: ALL` for that user. The
+   reset install boot has no terminal, so that drop-in is what later
+   `sudo` calls use.
 1. Generates `~/.ssh/id_ed25519` on the new box if it is missing
 1. Prints the public key and registers it with GitHub using `gh` on
    this computer
@@ -165,6 +168,15 @@ Edit `roles.conf` to change the module lists. `[common]` runs for
 | `haos`        | SSH keys and the short hostname on a Home Assistant OS appliance                                      |
 
 `enable-subrole laptop` adds `configure-laptop` (power-profiles-daemon).
+
+`enable-subrole nfs-server` installs the NFS server, creates `/srv/data`,
+and exports that path to `192.168.0.0/20` (`255.255.240.0`) with
+`rw,no_root_squash,no_subtree_check`. The line lives in
+`setup/files/network/nfs-server.exports`. A later run rewrites
+`/etc/exports.d/dot-files.exports` when the file drifts. The module
+does not partition a disk or copy data onto `/srv/data`. When firewalld
+is already running it allows the `nfs`, `mountd`, and `rpc-bind`
+services. It does not install or start firewalld.
 
 Dolphin is the Hyprland file manager (`SUPER+E`). After
 `remove-plasma-sddm` strips Plasma, it has no KService/MIME map unless
@@ -307,6 +319,29 @@ under `~/.cache/hyprland-source`. This module forces GCC 14 + libstdc++
 
 - mold (OpenMandriva cooker recipe; Clang 19 crashes Hyprland at
   launch). Other source builds still use `compiler.bashrc` clang.
+
+## Home Assistant notifications
+
+`install-ntfy-server` is on the haos role. It serves ntfy 2.29.0 on
+ward-drake, published at
+`http://ward-drake.stealthdragonland.net:2586`, topic `workstations`.
+Passwords are written once to `/mnt/data/ntfy/credentials` on that
+host. A later run reuses the bcrypt hashes already in `server.yml`
+and leaves the container up when that file is unchanged.
+
+`install-ntfy-subscribe` is on workstation. It installs the same ntfy
+client and enables `ntfy-workstations.service` on
+`workstation-session.target`. The unit starts when
+`~/.config/ntfy/client.yml` exists. That path is on the secrets list.
+The haos role writes it on the machine that runs `--target`. Copy it
+to the other workstation with `setup/utility/transfer-secrets.sh`.
+Each message is handed to `notify-send`, so mako shows it. The saved
+message id is where the next start continues, and the first start
+asks for the last 24 hours. The htpc role does not subscribe.
+
+Home Assistant publishes with `notify.send_message` on
+`notify.workstations`. The integration account is `homeassistant`.
+Desktops use the read-only `workstation` account.
 
 ## KDE Connect / GrapheneOS SMS
 

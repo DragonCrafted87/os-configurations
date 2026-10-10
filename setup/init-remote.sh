@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Run from a working computer. Opens one SSH master, copies secrets,
-# generates a key on the new box, registers that key with the local gh
-# session, clones both checkouts, and writes ~/.config/dot-files/role.
-# It does not apply the role.
+# installs git and curl, writes a passwordless sudoers drop-in for the
+# remote user, generates a key on the new box, registers that key with
+# the local gh session, clones both checkouts, and writes
+# ~/.config/dot-files/role. It does not apply the role.
 #
 #   ./setup/init-remote.sh dragon@newbox.lan workstation
 
@@ -19,6 +20,14 @@ write_saved_role() {
         fi
     fi
     printf '%s\n' "$role" >"$path"
+}
+
+# ssh joins this into one login-shell command. An unquoted function
+# is word-split there, and the parentheses are a syntax error.
+remote_role_script() {
+    local role="$1"
+    declare -f write_saved_role
+    printf 'write_saved_role %q\n' "$role"
 }
 
 # Commands run on the new machine after its SSH key can clone.
@@ -67,6 +76,91 @@ printf 'dot-files=%s\nmachine-setup=%s\n' "$dots" "$setup" > ~/.config/dot-files
 EOF
 }
 
+# ssh forwards stdin. A while-read loop's stdin is the file it is
+# reading, so a remote command without -n consumes the rest of that
+# file. --stdin is the copy, which brings its own redirect. -t is the
+# sudo prompt, which needs the terminal.
+remote() {
+    local tty=()
+    local forward_stdin=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t)
+                tty=(-t)
+                shift
+                ;;
+            --stdin)
+                forward_stdin=1
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+    local n=()
+    if [[ "$forward_stdin" -eq 0 && ${#tty[@]} -eq 0 ]]; then
+        n=(-n)
+    fi
+    ssh "${n[@]}" "${tty[@]}" \
+        -o ControlMaster=auto \
+        -o ControlPath="$sock" \
+        -o ControlPersist=10m \
+        -o ForwardX11=no \
+        -o ForwardX11Trusted=no \
+        -o PreferredAuthentications=password,keyboard-interactive,publickey \
+        "$target" "$@"
+}
+
+copy_listed_secrets() {
+    local list="$1"
+    local target="$2"
+    local rel src remote_dir copied=0 skipped=0
+    if [[ -f "$list" ]]; then
+        while IFS= read -r rel || [[ -n "${rel:-}" ]]; do
+            [[ -z "$rel" || "$rel" == \#* ]] && continue
+            src="${HOME}/${rel}"
+            if [[ ! -e "$src" ]]; then
+                printf 'skip (missing): %s\n' "$src"
+                skipped=$((skipped + 1))
+                continue
+            fi
+            remote_dir="$(dirname "$rel")"
+            if [[ "$remote_dir" != "." ]]; then
+                remote "mkdir -p -- $(printf '%q' "$remote_dir")"
+            fi
+            printf 'copy %s -> %s:%s\n' "$src" "$target" "$rel"
+            remote --stdin "cat > $(printf '%q' "$rel")" <"$src"
+            copied=$((copied + 1))
+        done <"$list"
+    fi
+    printf '==> copied %s, skipped %s\n' "$copied" "$skipped"
+}
+
+# Root script for the one sudo password prompt. The drop-in has to be
+# on disk before a reset: the install boot has no terminal, and the
+# prune removes packages init-remote added.
+remote_bootstrap_script() {
+    local user="$1"
+    local line dest
+    if [[ ! "$user" =~ ^[A-Za-z_][-A-Za-z0-9_]*$ ]]; then
+        printf 'error: remote user %s is not a sudoers name\n' "$user" >&2
+        return 1
+    fi
+    line="${user} ALL=(ALL) NOPASSWD: ALL"
+    dest="/etc/sudoers.d/${user}"
+    cat <<EOF
+set -euo pipefail
+tmp=\$(mktemp)
+printf '%s\\n' $(printf '%q' "$line") >"\$tmp"
+chmod 440 "\$tmp"
+visudo -cf "\$tmp"
+install -m 0440 "\$tmp" $(printf '%q' "$dest")
+rm -f "\$tmp"
+dnf install -y git curl
+EOF
+}
+
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
     return 0
 fi
@@ -112,22 +206,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-remote() {
-    local tty=()
-    if [[ "${1:-}" == "-t" ]]; then
-        tty=(-t)
-        shift
-    fi
-    ssh "${tty[@]}" \
-        -o ControlMaster=auto \
-        -o ControlPath="$sock" \
-        -o ControlPersist=10m \
-        -o ForwardX11=no \
-        -o ForwardX11Trusted=no \
-        -o PreferredAuthentications=password,keyboard-interactive,publickey \
-        "$target" "$@"
-}
-
 printf '==> open ssh master to %s (one password prompt)\n' "$target"
 ssh -fN \
     -o ControlMaster=yes \
@@ -162,30 +240,11 @@ if [[ -f "$repo_keys" ]]; then
 fi
 
 printf '==> copy secrets\n'
-copied=0
-skipped=0
-if [[ -f "$list" ]]; then
-    while IFS= read -r rel || [[ -n "${rel:-}" ]]; do
-        [[ -z "$rel" || "$rel" == \#* ]] && continue
-        src="${HOME}/${rel}"
-        if [[ ! -e "$src" ]]; then
-            printf 'skip (missing): %s\n' "$src"
-            skipped=$((skipped + 1))
-            continue
-        fi
-        remote_dir="$(dirname "$rel")"
-        if [[ "$remote_dir" != "." ]]; then
-            remote "mkdir -p -- ${remote_dir}"
-        fi
-        printf 'copy %s -> %s:%s\n' "$src" "$target" "$rel"
-        remote "cat > $(printf '%q' "$rel")" <"$src"
-        copied=$((copied + 1))
-    done <"$list"
-fi
-printf '==> copied %s, skipped %s\n' "$copied" "$skipped"
+copy_listed_secrets "$list" "$target"
 
-printf '==> bootstrap git on %s\n' "$target"
-remote -t 'sudo dnf install -y git curl'
+remote_user="${target%%@*}"
+printf '==> bootstrap git and passwordless sudo for %s\n' "$remote_user"
+remote -t "sudo bash -c $(printf '%q' "$(remote_bootstrap_script "$remote_user")")"
 remote 'mkdir -p ~/.ssh && chmod 700 ~/.ssh'
 remote 'if [[ ! -f ~/.ssh/id_ed25519 ]]; then ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C "$(id -un)@$(hostname -s)" -N ""; chmod 600 ~/.ssh/id_ed25519; chmod 644 ~/.ssh/id_ed25519.pub; fi'
 
@@ -205,4 +264,4 @@ printf '==> clone checkouts for %s\n' "$role"
 remote bash -c "$(printf '%q' "$(remote_checkout_script "$role")")"
 
 printf '==> record role %s\n' "$role"
-remote bash -c "$(declare -f write_saved_role; printf 'write_saved_role %q\n' "$role")"
+remote bash -c "$(printf '%q' "$(remote_role_script "$role")")"

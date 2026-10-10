@@ -1,0 +1,25 @@
+#!/bin/sh
+# ntfy runs this once per message. NTFY_PRIORITY is 1-5 or a name.
+# mako only has low, normal, and critical.
+
+set -eu
+
+title="${NTFY_TITLE:-Home Assistant}"
+if [ -z "$title" ]; then
+    title="Home Assistant"
+fi
+message="${NTFY_MESSAGE:-}"
+
+case "${NTFY_PRIORITY:-3}" in
+    1 | 2 | min | low) urgency=low ;;
+    4 | 5 | high | max | urgent) urgency=critical ;;
+    *) urgency=normal ;;
+esac
+
+if [ -n "${NTFY_ID:-}" ]; then
+    state="${HOME}/.local/state"
+    mkdir -p "$state"
+    printf '%s\n' "$NTFY_ID" >"${state}/ntfy-workstations.since"
+fi
+
+exec notify-send -a "Home Assistant" -u "$urgency" -- "$title" "$message"

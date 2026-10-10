@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Subscribe for this login. A saved message id skips alerts already shown.
+# The first start of a new state file asks for the last day, which is how
+# long the server keeps a message.
+
+set -euo pipefail
+
+config="${HOME}/.config/ntfy/client.yml"
+state="${HOME}/.local/state/ntfy-workstations.since"
+bin="${HOME}/bin/ntfy-desktop-notify"
+
+[[ -f "$config" ]] || exit 0
+mkdir -p "${HOME}/.local/state"
+
+since="24h"
+if [[ -s "$state" ]]; then
+    since="$(tr -d '[:space:]' <"$state")"
+fi
+
+exec /usr/local/bin/ntfy subscribe --config "$config" --since "$since" workstations "$bin"
