@@ -35,6 +35,11 @@ if grep -E 'submodule update --init[[:space:]]+[^[:space:]]' <<<"$workstation" >
 fi
 grep -F 'ln -sfn ~/git-workspace/homelab/dot-files ~/dot-files' <<<"$workstation" >/dev/null \
     || fail "workstation script does not link ~/dot-files"
+grep -F 'ln -sfn ~/git-workspace/homelab/machine-setup ~/machine-setup' <<<"$workstation" >/dev/null \
+    || fail "workstation script does not link ~/machine-setup"
+if grep -F 'ln -sfn ~/git-workspace/homelab/machine-setup ~/machine-setup' <<<"$server" >/dev/null; then
+    fail "server script links the homelab machine-setup checkout"
+fi
 grep -F '.config/dot-files/checkouts' <<<"$workstation" >/dev/null \
     || fail "workstation script does not write the checkouts file"
 

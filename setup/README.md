@@ -54,8 +54,8 @@ and sshd:
    `~/.config/dot-files/checkouts`. A workstation clones
    `git@github.com:DragonCrafted87/homelab.git` to
    `~/git-workspace/homelab`, runs `git submodule update --init`
-   with no path list, and links `~/dot-files` when that path is
-   absent. An htpc or server clones
+   with no path list, and links `~/dot-files` and `~/machine-setup`
+   when each path is absent. An htpc or server clones
    `git@github.com:DragonCrafted87/dot-files.git` to `~/dot-files`
    and `git@github.com:DragonCrafted87/os-configurations.git` to
    `~/machine-setup`.
