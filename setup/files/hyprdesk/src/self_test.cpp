@@ -119,15 +119,22 @@ StartupWMClass=kitty
     const std::string hicolor   = icon_root + "/hicolor";
     std::filesystem::create_directories(hicolor + "/scalable/apps");
     std::filesystem::create_directories(hicolor + "/22x22/apps");
+    std::filesystem::create_directories(hicolor + "/64x64/apps");
     std::filesystem::create_directories(hicolor + "/256x256/apps");
     std::filesystem::create_directories(icon_root + "/pix");
     {
         std::ofstream svg(hicolor + "/scalable/apps/multimc.svg");
         svg << "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
-        std::ofstream png(hicolor + "/256x256/apps/multimc.png");
+        std::ofstream png(hicolor + "/scalable/apps/multimc.png");
         png << "png";
         std::ofstream guild(hicolor + "/256x256/apps/guild-wars.png");
         guild << "png";
+        std::ofstream boinc_svg(hicolor + "/scalable/apps/boinc.svg");
+        boinc_svg << "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        std::ofstream boinc_png(hicolor + "/64x64/apps/boinc.png");
+        boinc_png << "png";
+        std::ofstream only_svg(hicolor + "/scalable/apps/only.svg");
+        only_svg << "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
         std::ofstream near(hicolor + "/22x22/apps/near.png");
         near << "png";
         std::ofstream far(hicolor + "/256x256/apps/near.png");
@@ -139,7 +146,9 @@ StartupWMClass=kitty
     }
     const std::vector<std::string> bases{icon_root};
     const std::vector<std::string> pix{icon_root + "/pix"};
-    EXPECT(resolve_icon_path("multimc", bases, pix) == hicolor + "/scalable/apps/multimc.svg");
+    EXPECT(resolve_icon_path("multimc", bases, pix) == hicolor + "/scalable/apps/multimc.png");
+    EXPECT(resolve_icon_path("boinc", bases, pix) == hicolor + "/64x64/apps/boinc.png");
+    EXPECT(resolve_icon_path("only", bases, pix) == hicolor + "/scalable/apps/only.svg");
     EXPECT(resolve_icon_path("guild-wars", bases, pix) == hicolor + "/256x256/apps/guild-wars.png");
     EXPECT(resolve_icon_path("near", bases, pix) == hicolor + "/22x22/apps/near.png");
     EXPECT(resolve_icon_path("only-pixmap", bases, pix) == icon_root + "/pix/only-pixmap.png");

@@ -20,6 +20,13 @@ install_manager_desktop() {
         install -m 0644 "$src" "$dest_user"
         run sudo install -m 0644 "$src" "$dest_sys"
     fi
+
+    local icon_src="${SETUP_FILES_DIR}/boinc/boinc.png"
+    local icon_dest="${DOTFILES_HOME}/.local/share/icons/hicolor/64x64/apps/boinc.png"
+    if [[ -f "$icon_src" && "${DOTFILES_DRY_RUN:-0}" != "1" ]]; then
+        ensure_dir "$(dirname "$icon_dest")"
+        install -m 0644 "$icon_src" "$icon_dest"
+    fi
 }
 
 # Manager stores the Select computer MRU in ~/.BOINC Manager.

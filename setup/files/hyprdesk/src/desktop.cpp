@@ -345,32 +345,48 @@ std::string resolve_icon_path(const std::string& name, const std::vector<std::st
     if (stem.empty())
         return {};
 
-    const char* default_exts[] = {".svg", ".png", ".xpm"};
-    const char* one_ext[]      = {only_ext.c_str()};
-    const char* const* exts    = only_ext.empty() ? default_exts : one_ext;
-    const size_t ext_count     = only_ext.empty() ? 3 : 1;
-    const char* contexts[]     = {"apps", "places", "devices", "mimetypes", "status", "categories", "emblems", "actions"};
-    const char* sizes[]        = {"scalable", "22x22", "24x24", "32x32", "16x16", "48x48", "64x64", "96x96", "128x128", "256x256", "512x512"};
+    const char* bitmap_exts[] = {".png", ".xpm", ".jpg", ".jpeg"};
+    const char* svg_exts[]    = {".svg"};
+    const char* contexts[]    = {"apps", "places", "devices", "mimetypes", "status", "categories", "emblems", "actions"};
+    const char* sizes[]       = {"scalable", "64x64", "48x48", "32x32", "22x22", "24x24", "256x256", "128x128", "96x96", "512x512", "16x16"};
 
-    for (const char* context : contexts) {
-        for (const char* size : sizes) {
-            for (const auto& base : icon_bases) {
-                for (size_t index = 0; index < ext_count; ++index) {
-                    const std::string path = base + "/hicolor/" + size + "/" + context + "/" + stem + exts[index];
-                    if (file_readable(path))
-                        return path;
+    auto wanted = [&](const char* ext) { return only_ext.empty() || only_ext == ext; };
+    auto themed = [&](const char* const* exts, size_t count) -> std::string {
+        for (const auto& base : icon_bases) {
+            for (const char* context : contexts) {
+                for (const char* size : sizes) {
+                    for (size_t index = 0; index < count; ++index) {
+                        if (!wanted(exts[index]))
+                            continue;
+                        const std::string path = base + "/hicolor/" + size + "/" + context + "/" + stem + exts[index];
+                        if (file_readable(path))
+                            return path;
+                    }
                 }
             }
         }
-    }
-    for (const auto& dir : pixmap_dirs) {
-        for (size_t index = 0; index < ext_count; ++index) {
-            const std::string path = dir + "/" + stem + exts[index];
-            if (file_readable(path))
-                return path;
+        return {};
+    };
+    auto pixmap = [&](const char* const* exts, size_t count) -> std::string {
+        for (const auto& dir : pixmap_dirs) {
+            for (size_t index = 0; index < count; ++index) {
+                if (!wanted(exts[index]))
+                    continue;
+                const std::string path = dir + "/" + stem + exts[index];
+                if (file_readable(path))
+                    return path;
+            }
         }
-    }
-    return {};
+        return {};
+    };
+
+    if (const auto hit = themed(bitmap_exts, 4); !hit.empty())
+        return hit;
+    if (const auto hit = pixmap(bitmap_exts, 4); !hit.empty())
+        return hit;
+    if (const auto hit = themed(svg_exts, 1); !hit.empty())
+        return hit;
+    return pixmap(svg_exts, 1);
 }
 
 std::string resolve_icon_path(const std::string& name) {

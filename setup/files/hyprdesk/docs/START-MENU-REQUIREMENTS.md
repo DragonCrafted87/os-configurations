@@ -42,8 +42,9 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 1. The flyout SHALL show each matching app by name, left aligned. When the
    desktop entry has an icon, the row SHALL show that icon and then the
    name. The icon SHALL come from the active theme, or from hicolor under
-   the XDG data directories when the theme does not have it. An empty
-   result SHALL say that no apps match.
+   the XDG data directories when the theme does not have it. A bitmap in
+   that tree SHALL be used ahead of an SVG. An empty result SHALL say
+   that no apps match.
 1. A left click on an app SHALL focus a window that is already open for
    that app and move it to the workspace that was current on the monitor
    under the menu. Otherwise it SHALL launch the app on that workspace.
