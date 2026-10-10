@@ -16,7 +16,7 @@
 *cupsVersion: 2.4
 *cupsSNMPSupplies: False
 *cupsLanguages: "en_US"
-*APSupplies: "http://192.168.0.6/#/Settings/Network/AirPrint"
+*APSupplies: "http://folio-wyvern.stealthdragonland.net/#/Settings/Network/AirPrint"
 *cupsJobPassword: "1111"
 *cupsFilter2: "image/jpeg image/jpeg 0 -"
 *cupsManualCopies: True
