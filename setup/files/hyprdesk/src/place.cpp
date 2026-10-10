@@ -89,6 +89,10 @@ std::vector<std::string> top_objects(const std::string& json) {
 
 } // namespace
 
+const char* hyprctl_bin() {
+    return "/usr/local/bin/hyprctl";
+}
+
 int menu_width_for(int monitor_w) {
     const int scaled = static_cast<int>(std::lround(monitor_w * 0.22));
     return std::max(380, std::min(460, scaled));
@@ -173,4 +177,40 @@ Placement place_menu(int cursor_x, int cursor_y, const std::vector<Monitor>& mon
     else
         place.flyout_left = left + place.menu_w + place.flyout_gap;
     return place;
+}
+
+Anchor clamp_on_output(int global_x, int global_y, int width, int height, const std::vector<Monitor>& monitors) {
+    const Monitor* monitor = nullptr;
+    for (const auto& candidate : monitors) {
+        if (global_x >= candidate.x && global_x < candidate.x + candidate.width && global_y >= candidate.y && global_y < candidate.y + candidate.height) {
+            monitor = &candidate;
+            break;
+        }
+    }
+    if (!monitor) {
+        for (const auto& candidate : monitors) {
+            if (candidate.focused) {
+                monitor = &candidate;
+                break;
+            }
+        }
+    }
+    if (!monitor && !monitors.empty())
+        monitor = &monitors.front();
+    Anchor anchor;
+    if (!monitor)
+        return anchor;
+    int left = global_x - monitor->x;
+    int top  = global_y - monitor->y;
+    if (left + width > monitor->width)
+        left = std::max(8, monitor->width - width - 8);
+    if (top + height > monitor->height)
+        top = std::max(8, monitor->height - height - 8);
+    if (left < 0)
+        left = 8;
+    if (top < 0)
+        top = 8;
+    anchor.left = left;
+    anchor.top  = top;
+    return anchor;
 }

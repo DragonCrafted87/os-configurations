@@ -66,6 +66,11 @@ bool run_self_test() {
     EXPECT(edge.flyout_on_left);
     auto other = place_menu(2000, 10, monitors, 400);
     EXPECT(other.monitor_w == 1920);
+    auto popup = clamp_on_output(100, 120, 240, 80, monitors);
+    EXPECT(popup.left == 100 && popup.top == 120);
+    auto popup_edge = clamp_on_output(1900, 1000, 240, 200, monitors);
+    EXPECT(popup_edge.left == 1920 - 240 - 8);
+    EXPECT(popup_edge.top == 1080 - 200 - 8);
 
     const char* desktop = R"([Desktop Entry]
 Type=Application

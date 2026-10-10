@@ -158,6 +158,139 @@ void StatusTray::read_item(TrayIcon& icon) {
     if (sd_bus_get_property_trivial(m_bus->bus, icon.service.c_str(), icon.path.c_str(), "org.kde.StatusNotifierItem", "ItemIsMenu", &error, 'b', &menu) >= 0)
         icon.item_is_menu = menu != 0;
     sd_bus_error_free(&error);
+    sd_bus_message* path_reply = nullptr;
+    error                      = SD_BUS_ERROR_NULL;
+    if (sd_bus_get_property(m_bus->bus, icon.service.c_str(), icon.path.c_str(), "org.kde.StatusNotifierItem", "Menu", &error, &path_reply, "o") >= 0 && path_reply) {
+        const char* path = nullptr;
+        if (sd_bus_message_read(path_reply, "o", &path) >= 0 && path)
+            icon.menu_path = path;
+    }
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(path_reply);
+}
+
+namespace {
+
+bool read_menu_item(sd_bus_message* message, TrayMenuItem& item) {
+    if (sd_bus_message_enter_container(message, 'r', "ia{sv}av") < 0)
+        return false;
+    if (sd_bus_message_read(message, "i", &item.id) < 0) {
+        sd_bus_message_exit_container(message);
+        return false;
+    }
+    if (sd_bus_message_enter_container(message, 'a', "{sv}") < 0) {
+        sd_bus_message_exit_container(message);
+        return false;
+    }
+    while (sd_bus_message_enter_container(message, 'e', "sv") > 0) {
+        const char* key = nullptr;
+        if (sd_bus_message_read(message, "s", &key) < 0) {
+            sd_bus_message_exit_container(message);
+            break;
+        }
+        const char* contents = nullptr;
+        if (sd_bus_message_peek_type(message, nullptr, &contents) < 0 || !contents) {
+            sd_bus_message_exit_container(message);
+            break;
+        }
+        if (sd_bus_message_enter_container(message, 'v', contents) < 0) {
+            sd_bus_message_exit_container(message);
+            break;
+        }
+        if (std::strcmp(key, "label") == 0 && contents[0] == 's') {
+            const char* label = nullptr;
+            if (sd_bus_message_read(message, "s", &label) >= 0 && label)
+                item.label = label;
+        } else if (std::strcmp(key, "type") == 0 && contents[0] == 's') {
+            const char* type = nullptr;
+            if (sd_bus_message_read(message, "s", &type) >= 0 && type && std::strcmp(type, "separator") == 0)
+                item.separator = true;
+        } else if (std::strcmp(key, "enabled") == 0 && contents[0] == 'b') {
+            int enabled = 1;
+            if (sd_bus_message_read(message, "b", &enabled) >= 0)
+                item.enabled = enabled != 0;
+        } else if (std::strcmp(key, "visible") == 0 && contents[0] == 'b') {
+            int visible = 1;
+            if (sd_bus_message_read(message, "b", &visible) >= 0 && visible == 0)
+                item.label.clear();
+        } else {
+            sd_bus_message_skip(message, contents);
+        }
+        sd_bus_message_exit_container(message);
+        sd_bus_message_exit_container(message);
+    }
+    sd_bus_message_exit_container(message);
+    if (sd_bus_message_enter_container(message, 'a', "v") >= 0) {
+        while (sd_bus_message_enter_container(message, 'v', "(ia{sv}av)") > 0) {
+            TrayMenuItem child;
+            if (read_menu_item(message, child) && (child.separator || !child.label.empty() || !child.children.empty()))
+                item.children.push_back(std::move(child));
+            sd_bus_message_exit_container(message);
+        }
+        sd_bus_message_exit_container(message);
+    }
+    sd_bus_message_exit_container(message);
+    return true;
+}
+
+} // namespace
+
+std::vector<TrayMenuItem> StatusTray::menu_items(const TrayIcon& icon) {
+    std::vector<TrayMenuItem> items;
+    if (!m_bus || icon.menu_path.empty())
+        return items;
+    sd_bus_error    error = SD_BUS_ERROR_NULL;
+    sd_bus_message* shown = nullptr;
+    sd_bus_call_method(m_bus->bus, icon.service.c_str(), icon.menu_path.c_str(), "com.canonical.dbusmenu", "AboutToShow", &error, &shown, "i", 0);
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(shown);
+    const char*     names[] = {"label", "type", "enabled", "visible"};
+    sd_bus_message* reply   = nullptr;
+    error                   = SD_BUS_ERROR_NULL;
+    sd_bus_message* call    = nullptr;
+    if (sd_bus_message_new_method_call(m_bus->bus, &call, icon.service.c_str(), icon.menu_path.c_str(), "com.canonical.dbusmenu", "GetLayout") < 0)
+        return items;
+    sd_bus_message_append(call, "ii", 0, -1);
+    sd_bus_message_open_container(call, 'a', "s");
+    for (const char* name : names)
+        sd_bus_message_append(call, "s", name);
+    sd_bus_message_close_container(call);
+    if (sd_bus_call(m_bus->bus, call, 0, &error, &reply) < 0) {
+        sd_bus_message_unref(call);
+        sd_bus_error_free(&error);
+        return items;
+    }
+    sd_bus_message_unref(call);
+    uint32_t     revision = 0;
+    TrayMenuItem root;
+    if (sd_bus_message_read(reply, "u", &revision) >= 0)
+        read_menu_item(reply, root);
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(reply);
+    if (!root.children.empty())
+        return root.children;
+    if (root.separator || !root.label.empty())
+        items.push_back(std::move(root));
+    return items;
+}
+
+void StatusTray::activate_menu_item(const TrayIcon& icon, int id) {
+    if (!m_bus || icon.menu_path.empty())
+        return;
+    sd_bus_message* call  = nullptr;
+    sd_bus_error    error = SD_BUS_ERROR_NULL;
+    sd_bus_message* reply = nullptr;
+    if (sd_bus_message_new_method_call(m_bus->bus, &call, icon.service.c_str(), icon.menu_path.c_str(), "com.canonical.dbusmenu", "Event") < 0)
+        return;
+    sd_bus_message_append(call, "is", id, "clicked");
+    sd_bus_message_open_container(call, 'v', "i");
+    sd_bus_message_append(call, "i", 0);
+    sd_bus_message_close_container(call);
+    sd_bus_message_append(call, "u", 0);
+    sd_bus_call(m_bus->bus, call, 0, &error, &reply);
+    sd_bus_message_unref(call);
+    sd_bus_message_unref(reply);
+    sd_bus_error_free(&error);
 }
 
 void StatusTray::register_item(const std::string& argument, const std::string& sender) {

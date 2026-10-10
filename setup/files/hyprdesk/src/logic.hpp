@@ -29,9 +29,17 @@ struct Placement {
 };
 
 int                      menu_width_for(int monitor_w);
+const char*              hyprctl_bin();
 bool                     parse_cursor_pos(const std::string& line, int& x, int& y);
 std::vector<Monitor>     parse_monitors(const std::string& json);
 Placement                place_menu(int cursor_x, int cursor_y, const std::vector<Monitor>& monitors, int menu_h);
+
+struct Anchor {
+    int left = 8;
+    int top  = 8;
+};
+
+Anchor clamp_on_output(int global_x, int global_y, int width, int height, const std::vector<Monitor>& monitors);
 
 struct Volume {
     double level = 0;
