@@ -1,4 +1,5 @@
 #include "logic.hpp"
+#include "tray.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -152,6 +153,26 @@ StartupWMClass=kitty
     CpuSample earlier{10, 100};
     CpuSample later{20, 200};
     EXPECT(cpu_percent(earlier, later) == 90);
+    EXPECT(std::string(status_cpu_max()) == "cpu 100%");
+    EXPECT(status_cpu_text(9) == "cpu 9%");
+    EXPECT(status_cpu_text(100) == "cpu 100%");
+    EXPECT(status_mem_text(5, 62, 9) == "mem 5/62.9G");
+    EXPECT(status_mem_max(62, 9) == "mem 88/62.9G");
+    EXPECT(status_mem_max(128, 0) == "mem 888/128.0G");
+    EXPECT(std::string(status_gpu_max()) == "gpu 100% 100°");
+    EXPECT(status_gpu_text("40", "61") == "gpu 40% 61°");
+    EXPECT(status_gpu_text("40", "") == "gpu 40%");
+    EXPECT(status_net_text("enp6s0", "up", false) == "eth enp6s0 up");
+    EXPECT(status_net_max("enp6s0", "up") == "eth enp6s0 unknown");
+    EXPECT(status_net_text("wlan0", "Home", true) == "eth Home");
+    EXPECT(status_net_max("wlan0", "Home") == "eth wlan0 unknown");
+    EXPECT(status_net_max("", "") == "eth --");
+    const uint8_t pixel[] = {255, 255, 0, 0};
+    const auto    png     = argb_to_png(1, 1, pixel, 4);
+    EXPECT(png.size() >= 8 && png[0] == 0x89 && png[1] == 'P' && png[2] == 'N' && png[3] == 'G');
+    EXPECT(argb_to_png(1, 1, pixel, 4) == png);
+    EXPECT(argb_to_png(0, 1, pixel, 4).empty());
+    EXPECT(argb_to_png(1, 1, pixel, 2).empty());
 
     run_detached({"/bin/true"});
     bool reaped = false;

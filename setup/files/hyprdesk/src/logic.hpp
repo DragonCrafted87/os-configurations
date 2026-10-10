@@ -113,10 +113,14 @@ enum class DeskCommand {
 DeskCommand parse_command(const std::string& line);
 
 struct StatsText {
-    std::string cpu  = "cpu --";
-    std::string mem  = "mem --";
-    std::string gpu  = "gpu --";
-    std::string net  = "net --";
+    std::string cpu     = "cpu --";
+    std::string mem     = "mem --";
+    std::string gpu     = "gpu --";
+    std::string net     = "net --";
+    std::string cpu_max = "cpu 100%";
+    std::string mem_max = "mem 8/8.0G";
+    std::string gpu_max = "gpu 100%";
+    std::string net_max = "eth unknown";
     std::string clock;
     std::string date;
 };
@@ -128,6 +132,14 @@ struct CpuSample {
 
 std::optional<CpuSample> read_cpu_sample();
 int                      cpu_percent(const CpuSample& earlier, const CpuSample& later);
+const char*              status_cpu_max();
+std::string              status_cpu_text(int percent);
+std::string              status_mem_text(unsigned used, unsigned whole, unsigned tenth);
+std::string              status_mem_max(unsigned whole, unsigned tenth);
+const char*              status_gpu_max();
+std::string              status_gpu_text(const std::string& util, const std::string& temp);
+std::string              status_net_text(const std::string& iface, const std::string& detail, bool wireless);
+std::string              status_net_max(const std::string& iface, const std::string& detail);
 StatsText                read_stats(const std::optional<CpuSample>& earlier);
 
 bool run_self_test();

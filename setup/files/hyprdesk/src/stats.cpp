@@ -69,17 +69,76 @@ int cpu_percent(const CpuSample& earlier, const CpuSample& later) {
     return static_cast<int>((100 * (total - idle)) / total);
 }
 
+const char* status_cpu_max() {
+    return "cpu 100%";
+}
+
+std::string status_cpu_text(int percent) {
+    if (percent < 0)
+        return "cpu --";
+    if (percent > 100)
+        percent = 100;
+    return "cpu " + std::to_string(percent) + "%";
+}
+
+std::string status_mem_text(unsigned used, unsigned whole, unsigned tenth) {
+    return "mem " + std::to_string(used) + "/" + std::to_string(whole) + "." + std::to_string(tenth) + "G";
+}
+
+std::string status_mem_max(unsigned whole, unsigned tenth) {
+    unsigned digits = 1;
+    unsigned value  = whole;
+    while (value >= 10) {
+        value /= 10;
+        ++digits;
+    }
+    return "mem " + std::string(digits, '8') + "/" + std::to_string(whole) + "." + std::to_string(tenth) + "G";
+}
+
+const char* status_gpu_max() {
+    return "gpu 100% 100°";
+}
+
+std::string status_gpu_text(const std::string& util, const std::string& temp) {
+    if (util.empty())
+        return "gpu --";
+    if (temp.empty())
+        return "gpu " + util + "%";
+    return "gpu " + util + "% " + temp + "°";
+}
+
+std::string status_net_text(const std::string& iface, const std::string& detail, bool wireless) {
+    if (iface.empty())
+        return "eth --";
+    if (wireless)
+        return "eth " + detail;
+    if (detail.empty())
+        return "eth " + iface;
+    return "eth " + iface + " " + detail;
+}
+
+std::string status_net_max(const std::string& iface, const std::string& detail) {
+    if (iface.empty())
+        return "eth --";
+    const std::string unknown = "unknown";
+    const std::string& state  = detail.size() > unknown.size() ? detail : unknown;
+    return "eth " + iface + " " + state;
+}
+
 StatsText read_stats(const std::optional<CpuSample>& earlier) {
     StatsText stats;
+    stats.cpu_max = status_cpu_max();
+    stats.gpu_max = "gpu 100%";
     if (auto now = read_cpu_sample(); now && earlier)
-        stats.cpu = "cpu " + std::to_string(cpu_percent(*earlier, *now)) + "%";
+        stats.cpu = status_cpu_text(cpu_percent(*earlier, *now));
 
     if (auto total = meminfo_kb("MemTotal:"); total && *total > 0) {
         const auto avail = meminfo_kb("MemAvailable:").value_or(0);
-        const auto used  = *total > avail ? (*total - avail) / 1024 / 1024 : 0;
-        const auto whole = *total / 1024 / 1024;
-        const auto tenth = ((*total / 1024) % 1024) * 10 / 1024;
-        stats.mem        = "mem " + std::to_string(used) + "/" + std::to_string(whole) + "." + std::to_string(tenth) + "G";
+        const auto used  = *total > avail ? static_cast<unsigned>((*total - avail) / 1024 / 1024) : 0U;
+        const auto whole = static_cast<unsigned>(*total / 1024 / 1024);
+        const auto tenth = static_cast<unsigned>(((*total / 1024) % 1024) * 10 / 1024);
+        stats.mem        = status_mem_text(used, whole, tenth);
+        stats.mem_max    = status_mem_max(whole, tenth);
     }
 
     std::string gpu_out;
@@ -94,27 +153,33 @@ StatsText read_stats(const std::optional<CpuSample>& earlier) {
                 temp.pop_back();
             while (!temp.empty() && temp.front() == ' ')
                 temp.erase(temp.begin());
-            stats.gpu = "gpu " + util + "% " + temp + "°";
+            stats.gpu     = status_gpu_text(util, temp);
+            stats.gpu_max = status_gpu_max();
         }
     } else {
         const auto busy = read_line_file("/sys/class/drm/card0/device/gpu_busy_percent");
         if (!busy.empty())
-            stats.gpu = "gpu " + busy + "%";
+            stats.gpu = status_gpu_text(busy, "");
     }
 
     const auto iface = default_iface();
     if (iface.empty()) {
-        stats.net = "eth --";
+        stats.net     = status_net_text("", "", false);
+        stats.net_max = status_net_max("", "");
     } else {
         std::string ssid;
         if (run_capture({"iwgetid", "-r"}, ssid) == 0) {
             while (!ssid.empty() && (ssid.back() == '\n' || ssid.back() == '\r'))
                 ssid.pop_back();
         }
-        if (!ssid.empty())
-            stats.net = "eth " + ssid;
-        else
-            stats.net = "eth " + iface + " " + read_line_file("/sys/class/net/" + iface + "/operstate");
+        if (!ssid.empty()) {
+            stats.net     = status_net_text(iface, ssid, true);
+            stats.net_max = status_net_max(iface, ssid);
+        } else {
+            const auto state = read_line_file("/sys/class/net/" + iface + "/operstate");
+            stats.net        = status_net_text(iface, state, false);
+            stats.net_max    = status_net_max(iface, state);
+        }
     }
 
     const auto now = std::time(nullptr);

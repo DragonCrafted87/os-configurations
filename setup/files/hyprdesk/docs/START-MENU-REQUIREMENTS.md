@@ -39,8 +39,9 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
    SHALL unpin it and close the flyout.
 1. Typing in the search field SHALL list matches from every category and
    SHALL title the flyout Search.
-1. The flyout SHALL show each matching app by name. An empty result SHALL
-   say that no apps match.
+1. The flyout SHALL show each matching app by name, left aligned. When the
+   desktop entry has an icon, the row SHALL show that icon and then the
+   name. An empty result SHALL say that no apps match.
 1. A left click on an app SHALL focus a window that is already open for
    that app and move it to the workspace that was current on the monitor
    under the menu. Otherwise it SHALL launch the app on that workspace.
@@ -56,7 +57,8 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 1. Min and All SHALL switch that filter. Refresh SHALL reread the clients.
    The Refresh label SHALL stay on one line.
 1. A left click SHALL move that window onto the workspace that was
-   current on the monitor under the menu, then close the menu. The
+   current on the monitor under the menu, then focus it, then close the
+   menu. The move and the focus SHALL be ordered dispatches. The
    minimized workspace SHALL NOT be shown. `special:minimized` SHALL be
    closed again if it becomes the visible special workspace.
 1. A right click SHALL close that window.
@@ -66,6 +68,13 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 ## Tray
 
 1. hyprdesk SHALL own `org.kde.StatusNotifierWatcher` while it runs.
+1. The tray row SHALL stay visible while items are registered. A long
+   window list SHALL shrink and scroll instead of pushing the tray out
+   of the menu. Items that register while the menu is open SHALL appear
+   without closing the menu.
+1. Each item SHALL show its theme icon when that icon exists, and
+   otherwise the image from its `IconPixmap`. The button SHALL NOT cover
+   that image with the item id.
 1. A left click SHALL activate the item. A middle click SHALL send the
    secondary action. A vertical scroll SHALL scroll the item.
 1. A right click SHALL open that item's menu at the pointer. The popup
@@ -96,8 +105,11 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 1. The menu SHALL show CPU, memory, GPU, and network, then the clock and
    the date. The clock and the date SHALL use the same font size, and
    both SHALL stay fully visible when the menu is against the bottom of
-   the screen. The status line SHALL stay fully visible when those
-   values change width.
+   the screen. Each status field SHALL have a fixed width sized for its
+   maximum value, so a change in digits SHALL NOT move the other fields.
+   Those maxima are `cpu 100%`, memory used as wide as the total,
+   `gpu 100%`, `100°` when a temperature is shown, and a network state
+   at least as wide as `unknown`.
 1. The power row SHALL be the bottom row of the menu. It SHALL show
    lock, logout, suspend, reboot, and shutdown, each wide enough to
    read, in that order.

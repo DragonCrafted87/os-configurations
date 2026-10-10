@@ -2,6 +2,7 @@
 
 #include "logic.hpp"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -20,9 +21,14 @@ struct TrayIcon {
     std::string id;
     std::string title;
     std::string icon;
+    std::string icon_theme;
+    std::vector<uint8_t> icon_png;
     std::string menu_path;
     bool        item_is_menu = false;
 };
+
+// Network-order ARGB (A, R, G, B) to a PNG. Empty when the size is unusable.
+std::vector<uint8_t> argb_to_png(int width, int height, const uint8_t* pixels, size_t size);
 
 class StatusTray {
   public:
@@ -34,9 +40,12 @@ class StatusTray {
 
     bool                      start();
     void                      process();
+    void                      announce();
     int                       fd() const;
+    uint64_t                  generation() const;
     const std::vector<TrayIcon>& items() const;
     void                      refresh();
+    void                      reload_icon(const std::string& service, const std::string& path);
     void                      activate(const TrayIcon& icon, int x, int y);
     void                      secondary(const TrayIcon& icon, int x, int y);
     void                      context(const TrayIcon& icon, int x, int y);
@@ -51,6 +60,7 @@ class StatusTray {
     struct Bus;
     Bus*                    m_bus = nullptr;
     std::vector<TrayIcon>   m_items;
+    uint64_t                m_generation = 0;
 
     void read_item(TrayIcon& icon);
     void call_item(const TrayIcon& icon, const char* method, const char* types, int a, int b, const char* text);

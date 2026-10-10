@@ -2,15 +2,20 @@
 
 #include <systemd/sd-bus.h>
 
+#include <cairo/cairo.h>
+
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 struct StatusTray::Bus {
-    sd_bus*      bus          = nullptr;
-    sd_bus_slot* slot         = nullptr;
-    sd_bus_slot* name_slot    = nullptr;
-    int          fd           = -1;
+    sd_bus*      bus       = nullptr;
+    sd_bus_slot* slot      = nullptr;
+    sd_bus_slot* name_slot = nullptr;
+    sd_bus_slot* icon_slot = nullptr;
+    int          fd        = -1;
 };
 
 namespace {
@@ -52,6 +57,13 @@ int version_property(sd_bus*, const char*, const char*, const char*, sd_bus_mess
     return sd_bus_message_append(reply, "i", version);
 }
 
+int on_new_icon(sd_bus_message* message, void* userdata, sd_bus_error*) {
+    const char* sender = sd_bus_message_get_sender(message);
+    const char* path   = sd_bus_message_get_path(message);
+    static_cast<StatusTray*>(userdata)->reload_icon(sender ? sender : "", path ? path : "");
+    return 0;
+}
+
 int name_owner_changed(sd_bus_message* message, void* userdata, sd_bus_error*) {
     const char* name = nullptr;
     const char* old_owner = nullptr;
@@ -84,6 +96,7 @@ const sd_bus_vtable kWatcher[] = {
 StatusTray::~StatusTray() {
     if (!m_bus)
         return;
+    sd_bus_slot_unref(m_bus->icon_slot);
     sd_bus_slot_unref(m_bus->name_slot);
     sd_bus_slot_unref(m_bus->slot);
     sd_bus_unref(m_bus->bus);
@@ -109,9 +122,10 @@ bool StatusTray::start() {
     }
     sd_bus_match_signal(bus->bus, &bus->name_slot, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameOwnerChanged",
                         name_owner_changed, this);
+    sd_bus_add_match(bus->bus, &bus->icon_slot, "type='signal',interface='org.kde.StatusNotifierItem',member='NewIcon'", on_new_icon, this);
     bus->fd = sd_bus_get_fd(bus->bus);
     m_bus   = bus;
-    sd_bus_emit_signal(bus->bus, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher", "StatusNotifierHostRegistered", "");
+    announce();
     return true;
 }
 
@@ -122,17 +136,116 @@ void StatusTray::process() {
     }
 }
 
+void StatusTray::announce() {
+    if (!m_bus)
+        return;
+    sd_bus_emit_signal(m_bus->bus, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher", "StatusNotifierHostRegistered", "");
+}
+
 int StatusTray::fd() const {
     return m_bus ? m_bus->fd : -1;
+}
+
+uint64_t StatusTray::generation() const {
+    return m_generation;
 }
 
 const std::vector<TrayIcon>& StatusTray::items() const {
     return m_items;
 }
 
+std::vector<uint8_t> argb_to_png(int width, int height, const uint8_t* pixels, size_t size) {
+    if (width <= 0 || height <= 0 || width > 256 || height > 256 || !pixels)
+        return {};
+    const size_t need = static_cast<size_t>(width) * static_cast<size_t>(height) * 4U;
+    if (size < need)
+        return {};
+    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
+        return {};
+    }
+    unsigned char* dest   = cairo_image_surface_get_data(surface);
+    const int      stride = cairo_image_surface_get_stride(surface);
+    for (int y = 0; y < height; ++y) {
+        auto*            row = reinterpret_cast<uint32_t*>(dest + static_cast<size_t>(y) * static_cast<size_t>(stride));
+        const uint8_t*   src = pixels + static_cast<size_t>(y) * static_cast<size_t>(width) * 4U;
+        for (int x = 0; x < width; ++x) {
+            const uint8_t alpha = src[0];
+            const uint8_t red   = static_cast<uint8_t>((static_cast<unsigned>(src[1]) * alpha) / 255U);
+            const uint8_t green = static_cast<uint8_t>((static_cast<unsigned>(src[2]) * alpha) / 255U);
+            const uint8_t blue  = static_cast<uint8_t>((static_cast<unsigned>(src[3]) * alpha) / 255U);
+            row[x]              = (static_cast<uint32_t>(alpha) << 24) | (static_cast<uint32_t>(red) << 16) | (static_cast<uint32_t>(green) << 8) | static_cast<uint32_t>(blue);
+            src += 4;
+        }
+    }
+    cairo_surface_mark_dirty(surface);
+    std::vector<uint8_t> png;
+    const cairo_status_t status = cairo_surface_write_to_png_stream(
+        surface,
+        [](void* closure, const unsigned char* data, unsigned int length) -> cairo_status_t {
+            auto* out = static_cast<std::vector<uint8_t>*>(closure);
+            out->insert(out->end(), data, data + length);
+            return CAIRO_STATUS_SUCCESS;
+        },
+        &png);
+    cairo_surface_destroy(surface);
+    if (status != CAIRO_STATUS_SUCCESS)
+        return {};
+    return png;
+}
+
+namespace {
+
+std::vector<uint8_t> read_icon_png(sd_bus* bus, const TrayIcon& icon) {
+    sd_bus_error    error = SD_BUS_ERROR_NULL;
+    sd_bus_message* reply = nullptr;
+    if (sd_bus_get_property(bus, icon.service.c_str(), icon.path.c_str(), "org.kde.StatusNotifierItem", "IconPixmap", &error, &reply, "a(iiay)") < 0) {
+        sd_bus_error_free(&error);
+        sd_bus_message_unref(reply);
+        return {};
+    }
+    sd_bus_error_free(&error);
+    if (sd_bus_message_enter_container(reply, 'a', "(iiay)") < 0) {
+        sd_bus_message_unref(reply);
+        return {};
+    }
+    int                  best_area = 0;
+    std::vector<uint8_t> best;
+    while (sd_bus_message_enter_container(reply, 'r', "iiay") > 0) {
+        int width  = 0;
+        int height = 0;
+        if (sd_bus_message_read(reply, "ii", &width, &height) < 0) {
+            sd_bus_message_exit_container(reply);
+            break;
+        }
+        const void* bytes = nullptr;
+        size_t      count = 0;
+        if (sd_bus_message_read_array(reply, 'y', &bytes, &count) < 0) {
+            sd_bus_message_exit_container(reply);
+            break;
+        }
+        if (width > 0 && height > 0 && width <= 256 && height <= 256 && width * height > best_area) {
+            auto png = argb_to_png(width, height, static_cast<const uint8_t*>(bytes), count);
+            if (!png.empty()) {
+                best_area = width * height;
+                best      = std::move(png);
+            }
+        }
+        sd_bus_message_exit_container(reply);
+    }
+    sd_bus_message_exit_container(reply);
+    sd_bus_message_unref(reply);
+    return best;
+}
+
+} // namespace
+
 void StatusTray::read_item(TrayIcon& icon) {
     if (!m_bus)
         return;
+    const auto   previous_icon = icon.icon;
+    const auto   previous_png  = icon.icon_png;
     sd_bus_error error = SD_BUS_ERROR_NULL;
     char*        text  = nullptr;
     if (sd_bus_get_property_string(m_bus->bus, icon.service.c_str(), icon.path.c_str(), "org.kde.StatusNotifierItem", "Id", &error, &text) >= 0 && text) {
@@ -152,8 +265,19 @@ void StatusTray::read_item(TrayIcon& icon) {
     if (sd_bus_get_property_string(m_bus->bus, icon.service.c_str(), icon.path.c_str(), "org.kde.StatusNotifierItem", "IconName", &error, &text) >= 0 && text) {
         icon.icon = text;
         free(text);
+        text = nullptr;
     }
     sd_bus_error_free(&error);
+    error = SD_BUS_ERROR_NULL;
+    if (sd_bus_get_property_string(m_bus->bus, icon.service.c_str(), icon.path.c_str(), "org.kde.StatusNotifierItem", "IconThemePath", &error, &text) >= 0 && text) {
+        icon.icon_theme = text;
+        free(text);
+        text = nullptr;
+    }
+    sd_bus_error_free(&error);
+    icon.icon_png = read_icon_png(m_bus->bus, icon);
+    if (icon.icon != previous_icon || icon.icon_png != previous_png)
+        ++m_generation;
     int menu = 0;
     error    = SD_BUS_ERROR_NULL;
     if (sd_bus_get_property_trivial(m_bus->bus, icon.service.c_str(), icon.path.c_str(), "org.kde.StatusNotifierItem", "ItemIsMenu", &error, 'b', &menu) >= 0)
@@ -334,12 +458,25 @@ void StatusTray::register_item(const std::string& argument, const std::string& s
     icon.path    = target.path;
     read_item(icon);
     m_items.push_back(icon);
+    ++m_generation;
     if (m_bus)
         sd_bus_emit_signal(m_bus->bus, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher", "StatusNotifierItemRegistered", "s", icon.service.c_str());
 }
 
+void StatusTray::reload_icon(const std::string& service, const std::string& path) {
+    for (auto& icon : m_items) {
+        if (icon.service == service && icon.path == path) {
+            read_item(icon);
+            return;
+        }
+    }
+}
+
 void StatusTray::drop_service(const std::string& service) {
+    const auto before = m_items.size();
     std::erase_if(m_items, [&](const TrayIcon& icon) { return icon.service == service; });
+    if (m_items.size() != before)
+        ++m_generation;
     if (m_bus)
         sd_bus_emit_signal(m_bus->bus, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher", "StatusNotifierItemUnregistered", "s", service.c_str());
 }

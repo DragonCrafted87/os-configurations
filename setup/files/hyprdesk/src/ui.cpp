@@ -80,17 +80,56 @@ LabelExtent measure_label(const std::string& text, const std::string& family, fl
     return extent;
 }
 
-std::string wide_status_line(const StatsText& stats) {
-    std::string mem = stats.mem.empty() ? "mem 000/000.0G" : stats.mem;
-    const auto  slash = mem.find('/');
-    if (slash != std::string::npos) {
-        const auto whole  = mem.substr(slash + 1);
-        const auto dot    = whole.find('.');
-        const auto digits = std::max<size_t>(1, dot == std::string::npos ? whole.size() : dot);
-        mem               = "mem " + std::string(digits, '8') + "/" + whole;
+float status_fields_width(const StatsText& stats, const std::string& family, float pt) {
+    constexpr float gap   = 10.F;
+    float           width = 0.F;
+    for (const std::string* field : {&stats.cpu_max, &stats.mem_max, &stats.gpu_max, &stats.net_max})
+        width += measure_label(*field, family, pt).width + gap;
+    return width > gap ? width - gap : width;
+}
+
+// The column drops later children that do not fit. Shrink the window list
+// so the tray, volume, status, clock, date, and power rows stay on screen.
+float window_list_height(int menu_h, size_t count) {
+    const float natural = count == 0 ? 28.F : std::min<float>(static_cast<float>(count), 6.F) * 44.F;
+    constexpr int reserved = 478;
+    const int     room     = menu_h - reserved;
+    const float   cap      = static_cast<float>(std::max(28, room));
+    return std::min(natural, cap);
+}
+
+CSharedPointer<CImageElement> image_for_name(IBackend* backend, const std::string& name, const std::string& theme_path, float side, bool sync_load) {
+    auto sized = [&](CSharedPointer<CImageBuilder> builder) {
+        return builder->fitMode(IMAGE_FIT_MODE_CONTAIN)->sync(sync_load)->size(box_size(side, side))->commence();
+    };
+    if (name.empty())
+        return {};
+    if (name.front() == '/') {
+        if (access(name.c_str(), R_OK) == 0)
+            return sized(CImageBuilder::begin()->path(std::string{name}));
+        return {};
     }
-    const std::string gpu = stats.gpu.find('%') == std::string::npos ? "gpu 100% 100°" : stats.gpu;
-    return "cpu 100%  " + mem + "  " + gpu + "  " + stats.net;
+    if (auto picture = backend->systemIcons()->lookupIcon(name); picture && picture->exists())
+        return sized(CImageBuilder::begin()->icon(picture));
+    if (!theme_path.empty()) {
+        for (const char* ext : {"", ".png", ".svg", ".xpm"}) {
+            std::string path = theme_path;
+            if (!path.empty() && path.back() != '/')
+                path.push_back('/');
+            path += name;
+            path += ext;
+            if (access(path.c_str(), R_OK) == 0)
+                return sized(CImageBuilder::begin()->path(std::move(path)));
+        }
+    }
+    return {};
+}
+
+CSharedPointer<CImageElement> image_for_png(const std::vector<uint8_t>& png, float side) {
+    if (png.empty())
+        return {};
+    auto bytes = png;
+    return CImageBuilder::begin()->data(std::move(bytes))->fitMode(IMAGE_FIT_MODE_CONTAIN)->sync(true)->size(box_size(side, side))->commence();
 }
 
 std::string window_meta(const Client& client) {
@@ -132,8 +171,8 @@ void pull_window(const Placement& place, const std::string& address) {
     const std::string window = lua_quote("address:" + address);
     const std::string ws     = workspace_lua(place);
     // One eval so focus cannot run while the window is still on special:minimized.
-    const std::string code = "hl.dsp.window.move({ workspace = " + ws + ", follow = false, window = " + window + " })()\n" +
-                             "hl.dsp.focus({ window = " + window + " })()\n";
+    const std::string code = "hl.dispatch(hl.dsp.window.move({ workspace = " + ws + ", follow = false, window = " + window + " }))\n" +
+                             "hl.dispatch(hl.dsp.focus({ window = " + window + " }))\n";
     run_detached({hyprctl_bin(), "eval", code});
 }
 
@@ -200,7 +239,10 @@ class DeskUi {
     CSharedPointer<CTextboxElement>       m_search_box;
     CSharedPointer<CTextElement>          m_clock;
     CSharedPointer<CTextElement>          m_date;
-    CSharedPointer<CTextElement>          m_stats_text;
+    CSharedPointer<CTextElement>          m_cpu_text;
+    CSharedPointer<CTextElement>          m_mem_text;
+    CSharedPointer<CTextElement>          m_gpu_text;
+    CSharedPointer<CTextElement>          m_net_text;
     CSharedPointer<CTextElement>          m_volume_readout;
     CSharedPointer<CSliderElement>        m_menu_slider;
     CSharedPointer<CTextElement>          m_osd_label;
@@ -217,7 +259,13 @@ DeskUi::DeskUi(bool open_menu, int listen_fd) : m_backend(IBackend::create()), m
     m_volume = read_volume();
     m_apps   = load_desktop_entries();
     if (m_tray.start() && m_tray.fd() >= 0) {
-        m_backend->addFd(m_tray.fd(), [this] { m_tray.process(); });
+        m_backend->addFd(m_tray.fd(), [this] {
+            const auto before = m_tray.generation();
+            m_tray.process();
+            if (m_menu_open && m_tray.generation() != before)
+                m_backend->addIdle([this] { rebuild_menu(); });
+        });
+        m_backend->addTimer(std::chrono::seconds(1), [this](CAtomicSharedPointer<CTimer>, void*) { m_tray.announce(); }, nullptr);
     }
     if (m_poke >= 0) {
         m_backend->addFd(m_poke, [this] {
@@ -474,8 +522,8 @@ void DeskUi::launch(const DesktopEntry& entry) {
     if (is_minimized_workspace(m_place.workspace_name))
         return;
     const std::string ws = workspace_lua(m_place);
-    const std::string code = "hl.dsp.focus({ workspace = " + ws + " })()\n" +
-                             "hl.dsp.exec_cmd(" + lua_quote(command) + ", { workspace = " + ws + " })()\n";
+    const std::string code = "hl.dispatch(hl.dsp.focus({ workspace = " + ws + " }))\n" +
+                             "hl.dispatch(hl.dsp.exec_cmd(" + lua_quote(command) + ", { workspace = " + ws + " }))\n";
     run_detached({hyprctl_bin(), "eval", code});
     m_backend->addIdle([this] { close_menu(); });
 }
@@ -509,10 +557,8 @@ void DeskUi::rebuild_flyout() {
         if (shown++ == 400)
             break;
         auto button = CButtonBuilder::begin()
-                          ->label(std::string{app.name})
-                          ->ellipsize(true)
+                          ->label("")
                           ->noBorder(true)
-                          ->fontSize({CFontSize::HT_FONT_TEXT, 1.F})
                           ->size(bar_size(1, 34))
                           ->onMainClick([this, app](CSharedPointer<CButtonElement>) { launch(app); })
                           ->onRightClick([this, app](CSharedPointer<CButtonElement>) {
@@ -520,6 +566,20 @@ void DeskUi::rebuild_flyout() {
                               m_backend->addIdle([this] { close_menu(); });
                           })
                           ->commence();
+        auto line = CRowLayoutBuilder::begin()->gap(8)->size(percent_box(1, 1))->commence();
+        line->setMargin(4);
+        if (auto icon = image_for_name(m_backend.get(), app.icon, "", 20.F, false))
+            line->addChild(icon);
+        auto name = CTextBuilder::begin()
+                        ->text(std::string{app.name})
+                        ->async(false)
+                        ->align(HT_FONT_ALIGN_LEFT)
+                        ->fontSize({CFontSize::HT_FONT_TEXT, 1.F})
+                        ->size({CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_PERCENT, {8.F, 1.F}})
+                        ->commence();
+        name->setGrow(true, false);
+        line->addChild(name);
+        button->addChild(line);
         list->addChild(button);
     }
     scroll->addChild(list);
@@ -670,7 +730,7 @@ void DeskUi::rebuild_menu() {
     header->addChild(refresh_button);
     m_menu_layout->addChild(header);
 
-    const float window_h = windows.empty() ? 28.F : std::min<float>(static_cast<float>(windows.size()), 6.F) * 44.F;
+    const float window_h = window_list_height(m_place.menu_h, windows.size());
     auto window_scroll = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, window_h))->commence();
     window_scroll->setReceivesMouse(true);
     window_scroll->setMouseEnter(below_categories);
@@ -719,8 +779,14 @@ void DeskUi::rebuild_menu() {
         auto tray_row = CRowLayoutBuilder::begin()->gap(4)->size(bar_size(1, 28))->commence();
         for (const auto& icon : m_tray.items()) {
             const auto label = !icon.title.empty() ? icon.title : (!icon.id.empty() ? icon.id : icon.service);
+            auto picture = image_for_name(m_backend.get(), icon.icon, icon.icon_theme, 22.F, true);
+            if (!picture)
+                picture = image_for_png(icon.icon_png, 22.F);
+            std::string shown;
+            if (!picture && !label.empty())
+                shown = label.substr(0, std::min<size_t>(2, label.size()));
             auto button = CButtonBuilder::begin()
-                              ->label(std::string{label})
+                              ->label(std::move(shown))
                               ->ellipsize(true)
                               ->noBorder(true)
                               ->size(box_size(28, 28))
@@ -745,11 +811,10 @@ void DeskUi::rebuild_menu() {
                     return;
                 m_tray.scroll(icon, delta > 0 ? 1 : -1, "vertical");
             });
-            if (!icon.icon.empty()) {
-                if (auto picture = m_backend->systemIcons()->lookupIcon(icon.icon); picture && picture->exists()) {
-                    auto image = CImageBuilder::begin()->icon(picture)->size(box_size(20, 20))->commence();
-                    button->addChild(image);
-                }
+            if (picture) {
+                picture->setPositionMode(IElement::HT_POSITION_ABSOLUTE);
+                picture->setPositionFlag(IElement::HT_POSITION_FLAG_CENTER, true);
+                button->addChild(picture);
             }
             button->setTooltip(std::string{label});
             tray_row->addChild(button);
@@ -814,12 +879,21 @@ void DeskUi::rebuild_menu() {
 
     m_stats = read_stats(m_cpu);
     m_cpu   = read_cpu_sample();
-    const std::string status = m_stats.cpu + "  " + m_stats.mem + "  " + m_stats.gpu + "  " + m_stats.net;
-    const float status_w = std::max(1.F, measure_label(wide_status_line(m_stats), m_palette->m_vars.fontFamily, static_cast<float>(m_palette->m_vars.fontSize)).width);
+    const std::string family = m_palette->m_vars.fontFamily;
+    const float       pt     = static_cast<float>(m_palette->m_vars.fontSize);
+    auto status_row = CRowLayoutBuilder::begin()->gap(10)->size(bar_size(1, 22))->commence();
+    status_row->setReceivesMouse(true);
+    status_row->setMouseEnter(below_categories);
+    auto add_status = [&](const std::string& text, const std::string& widest, CSharedPointer<CTextElement>& slot) {
+        const float width = std::max(1.F, measure_label(widest, family, pt).width);
+        slot = CTextBuilder::begin()->text(std::string{text})->async(false)->align(HT_FONT_ALIGN_LEFT)->size(box_size(width, 22))->commence();
+        status_row->addChild(slot);
+    };
+    add_status(m_stats.cpu, m_stats.cpu_max, m_cpu_text);
+    add_status(m_stats.mem, m_stats.mem_max, m_mem_text);
+    add_status(m_stats.gpu, m_stats.gpu_max, m_gpu_text);
+    add_status(m_stats.net, m_stats.net_max, m_net_text);
     m_menu_layout->addChild(rule());
-    m_stats_text = CTextBuilder::begin()->text(std::string{status})->async(false)->size(box_size(status_w, 22))->commence();
-    m_stats_text->setReceivesMouse(true);
-    m_stats_text->setMouseEnter(below_categories);
     m_clock = CTextBuilder::begin()
                   ->text(std::string{m_stats.clock})
                   ->async(false)
@@ -834,7 +908,7 @@ void DeskUi::rebuild_menu() {
                  ->color([this] { return m_palette->m_colors.accent; })
                  ->size(bar_size(1, 36))
                  ->commence();
-    m_menu_layout->addChild(m_stats_text);
+    m_menu_layout->addChild(status_row);
     m_menu_layout->addChild(m_clock);
     m_menu_layout->addChild(m_date);
 
@@ -875,7 +949,8 @@ void DeskUi::open_menu_at_cursor() {
     m_place            = place_menu(x, y, parse_monitors(monitors_json), estimate);
     m_stats            = read_stats(m_cpu);
     m_cpu              = read_cpu_sample();
-    const float status_w = measure_label(wide_status_line(m_stats), m_palette->m_vars.fontFamily, static_cast<float>(m_palette->m_vars.fontSize)).width + 28.F;
+    m_tray.announce();
+    const float status_w = status_fields_width(m_stats, m_palette->m_vars.fontFamily, static_cast<float>(m_palette->m_vars.fontSize)) + 36.F;
     if (status_w > static_cast<float>(m_place.menu_w))
         m_place.menu_w = std::min(m_place.monitor_w - 16, static_cast<int>(std::ceil(status_w)));
     m_place.flyout_on_left = (m_place.menu_left + m_place.menu_w + m_place.flyout_gap + m_place.flyout_w) > (m_place.monitor_w - 8);
@@ -1070,8 +1145,14 @@ void DeskUi::tick_clock() {
         m_clock->setText(m_stats.clock);
     if (m_date)
         m_date->setText(m_stats.date);
-    if (m_stats_text)
-        m_stats_text->setText(m_stats.cpu + "  " + m_stats.mem + "  " + m_stats.gpu + "  " + m_stats.net);
+    if (m_cpu_text)
+        m_cpu_text->setText(m_stats.cpu);
+    if (m_mem_text)
+        m_mem_text->setText(m_stats.mem);
+    if (m_gpu_text)
+        m_gpu_text->setText(m_stats.gpu);
+    if (m_net_text)
+        m_net_text->setText(m_stats.net);
     m_backend->addTimer(std::chrono::seconds(1), [this](CAtomicSharedPointer<CTimer>, void*) { tick_clock(); }, nullptr);
 }
 
