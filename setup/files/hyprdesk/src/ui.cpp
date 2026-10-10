@@ -259,7 +259,9 @@ void DeskUi::show_osd() {
     const std::string family = m_palette->m_vars.fontFamily;
     const float       pt     = static_cast<float>(m_palette->m_vars.smallFontSize);
     const LabelExtent extent = measure_label(label, family, pt);
-    const float       track_w = extent.width;
+    // Lock the track to the "100%" label so it does not resize as the
+    // percent string gains or loses a digit.
+    const float track_w = measure_label("100%", family, pt).width;
 
     // One layer for the life of the process. Replacing it on each step
     // leaves the previous surface up until the compositor destroys it.
@@ -286,7 +288,7 @@ void DeskUi::show_osd() {
                           ->fontFamily(std::string{family})
                           ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.text; })
                           ->async(false)
-                          ->size(box_size(track_w, extent.height))
+                          ->size(box_size(extent.width, extent.height))
                           ->commence();
         m_osd_label->setPositionFlag(IElement::HT_POSITION_FLAG_HCENTER, true);
         m_osd_track = CRectangleBuilder::begin()
@@ -313,7 +315,7 @@ void DeskUi::show_osd() {
         m_osd->m_rootElement->addChild(background);
     }
 
-    m_osd_label->rebuild()->text(std::string{label})->size(box_size(track_w, extent.height))->commence();
+    m_osd_label->rebuild()->text(std::string{label})->size(box_size(extent.width, extent.height))->commence();
     m_osd_track->rebuild()->size(box_size(track_w, track_h))->commence();
     m_osd_track->clearChildren();
     const float fill    = static_cast<float>(volume_fill(m_volume));
