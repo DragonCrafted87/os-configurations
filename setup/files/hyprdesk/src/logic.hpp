@@ -82,6 +82,8 @@ bool                        class_matches_needle(const std::string& klass, const
 std::string                 strip_exec_field_codes(const std::string& exec);
 std::vector<std::string>    split_exec(const std::string& exec);
 std::vector<DesktopEntry>   load_desktop_entries();
+std::string                 resolve_icon_path(const std::string& name, const std::vector<std::string>& icon_bases, const std::vector<std::string>& pixmap_dirs);
+std::string                 resolve_icon_path(const std::string& name);
 
 struct Client {
     std::string address;

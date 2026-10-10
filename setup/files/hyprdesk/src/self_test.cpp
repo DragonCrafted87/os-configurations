@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -111,6 +113,40 @@ StartupWMClass=kitty
     auto hidden = *entry;
     hidden.no_display = true;
     EXPECT(filter_apps({hidden}, "*", "").empty());
+    char icon_dir[] = "/tmp/hyprdesk-icon-XXXXXX";
+    EXPECT(mkdtemp(icon_dir) != nullptr);
+    const std::string icon_root = icon_dir;
+    const std::string hicolor   = icon_root + "/hicolor";
+    std::filesystem::create_directories(hicolor + "/scalable/apps");
+    std::filesystem::create_directories(hicolor + "/22x22/apps");
+    std::filesystem::create_directories(hicolor + "/256x256/apps");
+    std::filesystem::create_directories(icon_root + "/pix");
+    {
+        std::ofstream svg(hicolor + "/scalable/apps/multimc.svg");
+        svg << "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        std::ofstream png(hicolor + "/256x256/apps/multimc.png");
+        png << "png";
+        std::ofstream guild(hicolor + "/256x256/apps/guild-wars.png");
+        guild << "png";
+        std::ofstream near(hicolor + "/22x22/apps/near.png");
+        near << "png";
+        std::ofstream far(hicolor + "/256x256/apps/near.png");
+        far << "png";
+        std::ofstream pixmap(icon_root + "/pix/only-pixmap.png");
+        pixmap << "png";
+        std::ofstream absolute(icon_root + "/absolute.png");
+        absolute << "png";
+    }
+    const std::vector<std::string> bases{icon_root};
+    const std::vector<std::string> pix{icon_root + "/pix"};
+    EXPECT(resolve_icon_path("multimc", bases, pix) == hicolor + "/scalable/apps/multimc.svg");
+    EXPECT(resolve_icon_path("guild-wars", bases, pix) == hicolor + "/256x256/apps/guild-wars.png");
+    EXPECT(resolve_icon_path("near", bases, pix) == hicolor + "/22x22/apps/near.png");
+    EXPECT(resolve_icon_path("only-pixmap", bases, pix) == icon_root + "/pix/only-pixmap.png");
+    EXPECT(resolve_icon_path("missing", bases, pix).empty());
+    EXPECT(resolve_icon_path(icon_root + "/absolute.png", bases, pix) == icon_root + "/absolute.png");
+    EXPECT(resolve_icon_path(icon_root + "/nope.png", bases, pix).empty());
+    std::filesystem::remove_all(icon_root);
     EXPECT(strip_exec_field_codes("kitty %f --class %c %%") == "kitty  --class  %");
     auto args = split_exec("\"code\" -- %f");
     EXPECT(args.size() == 2 && args[0] == "code" && args[1] == "--");

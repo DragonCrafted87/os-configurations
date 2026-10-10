@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
+#include <unistd.h>
 
 namespace {
 
@@ -262,4 +265,119 @@ std::vector<DesktopEntry> load_desktop_entries() {
         }
     }
     return entries;
+}
+
+namespace {
+
+std::vector<std::string> split_colon_paths(const char* raw, const char* fallback, const char* child) {
+    std::vector<std::string> paths;
+    std::string              text = raw && *raw ? raw : fallback;
+    std::stringstream        input(text);
+    std::string              dir;
+    while (std::getline(input, dir, ':')) {
+        if (!dir.empty())
+            paths.push_back(dir + child);
+    }
+    return paths;
+}
+
+std::vector<std::string> default_icon_bases() {
+    std::vector<std::string> bases;
+    const char*              home = std::getenv("HOME");
+    if (const char* data_home = std::getenv("XDG_DATA_HOME"); data_home && *data_home)
+        bases.push_back(std::string(data_home) + "/icons");
+    else if (home && *home)
+        bases.push_back(std::string(home) + "/.local/share/icons");
+    if (home && *home)
+        bases.push_back(std::string(home) + "/.icons");
+    auto data = split_colon_paths(std::getenv("XDG_DATA_DIRS"), "/usr/local/share:/usr/share", "/icons");
+    bases.insert(bases.end(), data.begin(), data.end());
+    return bases;
+}
+
+std::vector<std::string> default_pixmap_dirs() {
+    std::vector<std::string> dirs;
+    const char*              home = std::getenv("HOME");
+    if (const char* data_home = std::getenv("XDG_DATA_HOME"); data_home && *data_home)
+        dirs.push_back(std::string(data_home) + "/pixmaps");
+    else if (home && *home)
+        dirs.push_back(std::string(home) + "/.local/share/pixmaps");
+    auto data = split_colon_paths(std::getenv("XDG_DATA_DIRS"), "/usr/local/share:/usr/share", "/pixmaps");
+    dirs.insert(dirs.end(), data.begin(), data.end());
+    return dirs;
+}
+
+bool file_readable(const std::string& path) {
+    return !path.empty() && access(path.c_str(), R_OK) == 0;
+}
+
+} // namespace
+
+std::string resolve_icon_path(const std::string& name, const std::vector<std::string>& icon_bases, const std::vector<std::string>& pixmap_dirs) {
+    if (name.empty())
+        return {};
+    if (name.front() == '/' || name.front() == '~') {
+        std::string path = name;
+        if (name.front() == '~') {
+            const char* home = std::getenv("HOME");
+            if (!home)
+                return {};
+            path = std::string(home) + name.substr(1);
+        }
+        return file_readable(path) ? path : std::string{};
+    }
+
+    std::string stem = name;
+    const auto  slash = stem.find_last_of('/');
+    if (slash != std::string::npos)
+        stem = stem.substr(slash + 1);
+    std::string only_ext;
+    const auto  dot = stem.find_last_of('.');
+    if (dot != std::string::npos && dot > 0) {
+        auto ext = stem.substr(dot);
+        for (char& c : ext)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (ext == ".png" || ext == ".svg" || ext == ".xpm" || ext == ".jpg" || ext == ".jpeg") {
+            only_ext = ext;
+            stem     = stem.substr(0, dot);
+        }
+    }
+    if (stem.empty())
+        return {};
+
+    const char* default_exts[] = {".svg", ".png", ".xpm"};
+    const char* one_ext[]      = {only_ext.c_str()};
+    const char* const* exts    = only_ext.empty() ? default_exts : one_ext;
+    const size_t ext_count     = only_ext.empty() ? 3 : 1;
+    const char* contexts[]     = {"apps", "places", "devices", "mimetypes", "status", "categories", "emblems", "actions"};
+    const char* sizes[]        = {"scalable", "22x22", "24x24", "32x32", "16x16", "48x48", "64x64", "96x96", "128x128", "256x256", "512x512"};
+
+    for (const char* context : contexts) {
+        for (const char* size : sizes) {
+            for (const auto& base : icon_bases) {
+                for (size_t index = 0; index < ext_count; ++index) {
+                    const std::string path = base + "/hicolor/" + size + "/" + context + "/" + stem + exts[index];
+                    if (file_readable(path))
+                        return path;
+                }
+            }
+        }
+    }
+    for (const auto& dir : pixmap_dirs) {
+        for (size_t index = 0; index < ext_count; ++index) {
+            const std::string path = dir + "/" + stem + exts[index];
+            if (file_readable(path))
+                return path;
+        }
+    }
+    return {};
+}
+
+std::string resolve_icon_path(const std::string& name) {
+    static std::unordered_map<std::string, std::string> cache;
+    if (const auto it = cache.find(name); it != cache.end())
+        return it->second;
+    const auto found = resolve_icon_path(name, default_icon_bases(), default_pixmap_dirs());
+    cache.emplace(name, found);
+    return found;
 }

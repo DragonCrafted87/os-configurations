@@ -111,6 +111,8 @@ CSharedPointer<CImageElement> image_for_name(IBackend* backend, const std::strin
     }
     if (auto picture = backend->systemIcons()->lookupIcon(name); picture && picture->exists())
         return sized(CImageBuilder::begin()->icon(picture));
+    if (const auto path = resolve_icon_path(name); !path.empty())
+        return CImageBuilder::begin()->path(std::string{path})->fitMode(IMAGE_FIT_MODE_CONTAIN)->sync(true)->size(box_size(side, side))->commence();
     if (!theme_path.empty()) {
         for (const char* ext : {"", ".png", ".svg", ".xpm"}) {
             std::string path = theme_path;
