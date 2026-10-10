@@ -83,9 +83,13 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 1. A right click SHALL open that item's menu at the pointer. The popup
    SHALL be only as large as its entries, and it SHALL stay on the
    monitor under the pointer.
-1. A submenu SHALL open when the pointer hovers that row, replace the
-   popup contents, and SHALL offer Back. The replacement SHALL wait until
-   the pointer event has returned.
+1. A submenu SHALL open beside its parent when the pointer hovers that
+   row. Parent menus SHALL stay open until the pointer leaves the whole
+   menu tree, or until the pointer enters another part of the start menu.
+   Opening or closing one of those menus SHALL wait until the pointer
+   event has returned.
+1. The name of a tray icon SHALL be shown beside the pointer. Closing
+   that label SHALL wait until the pointer event has returned.
 1. A left click on a menu entry that is not a submenu SHALL close the
    start menu.
 1. When the item has no menu layout, a fallback to the item's own context

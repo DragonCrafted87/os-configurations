@@ -127,6 +127,65 @@ CSharedPointer<CImageElement> image_for_name(IBackend* backend, const std::strin
     return {};
 }
 
+bool read_pointer(int& x, int& y) {
+    std::string cursor;
+    if (run_capture({hyprctl_bin(), "cursorpos"}, cursor) != 0)
+        return false;
+    return parse_cursor_pos(cursor, x, y);
+}
+
+bool box_contains(int x, int y, int left, int top, int width, int height, int pad) {
+    return x >= left - pad && x < left + width + pad && y >= top - pad && y < top + height + pad;
+}
+
+struct PopupPlace {
+    int global_x = 0;
+    int global_y = 0;
+    int local_x  = 8;
+    int local_y  = 8;
+};
+
+const Monitor* monitor_at(int x, int y, const std::vector<Monitor>& monitors) {
+    for (const auto& monitor : monitors) {
+        if (x >= monitor.x && x < monitor.x + monitor.width && y >= monitor.y && y < monitor.y + monitor.height)
+            return &monitor;
+    }
+    for (const auto& monitor : monitors) {
+        if (monitor.focused)
+            return &monitor;
+    }
+    return monitors.empty() ? nullptr : &monitors.front();
+}
+
+PopupPlace place_popup(int prefer_x, int prefer_y, int width, int height, int parent_left, bool beside, const std::vector<Monitor>& monitors) {
+    PopupPlace place;
+    const Monitor* monitor = monitor_at(prefer_x, prefer_y, monitors);
+    int            x       = prefer_x;
+    int            y       = prefer_y;
+    if (beside && monitor && x + width > monitor->x + monitor->width - 8)
+        x = parent_left - width - 6;
+    if (!monitor) {
+        place.global_x = x;
+        place.global_y = y;
+        place.local_x  = x;
+        place.local_y  = y;
+        return place;
+    }
+    if (x < monitor->x + 8)
+        x = monitor->x + 8;
+    if (y < monitor->y + 8)
+        y = monitor->y + 8;
+    if (x + width > monitor->x + monitor->width - 8)
+        x = std::max(monitor->x + 8, monitor->x + monitor->width - width - 8);
+    if (y + height > monitor->y + monitor->height - 8)
+        y = std::max(monitor->y + 8, monitor->y + monitor->height - height - 8);
+    place.global_x = x;
+    place.global_y = y;
+    place.local_x  = x - monitor->x;
+    place.local_y  = y - monitor->y;
+    return place;
+}
+
 CSharedPointer<CImageElement> image_for_png(const std::vector<uint8_t>& png, float side) {
     if (png.empty())
         return {};
@@ -209,7 +268,13 @@ class DeskUi {
     void close_client(const Client& client);
     void power(const std::string& action);
     void open_tray_menu(const TrayIcon& icon);
-    void show_tray_menu(const std::vector<TrayMenuItem>& items);
+    void open_tray_layer(const std::vector<TrayMenuItem>& items, size_t level, int item_id, int prefer_x, int prefer_y, int parent_left, bool beside);
+    void close_tray_from(size_t level);
+    void queue_tray_hover(const TrayMenuItem& item, size_t level, int prefer_x, int prefer_y, int parent_left, bool open_child);
+    void queue_dismiss_tray_tree();
+    bool pointer_over_tray_tree();
+    void show_icon_tip(const std::string& text);
+    void close_icon_tip();
     Volume read_volume() const;
 
     CSharedPointer<IBackend>              m_backend;
@@ -234,10 +299,30 @@ class DeskUi {
     CSharedPointer<IWindow>               m_flyout;
     CSharedPointer<IWindow>               m_dismiss;
     CSharedPointer<IWindow>               m_osd;
-    CSharedPointer<IWindow>               m_tray_popup;
+    struct TrayLayer {
+        CSharedPointer<IWindow> window;
+        int                     gx      = 0;
+        int                     gy      = 0;
+        int                     width   = 0;
+        int                     height  = 0;
+        int                     item_id = -1;
+    };
+    std::vector<TrayLayer>                m_tray_layers;
     TrayIcon                              m_tray_popup_icon;
-    std::vector<std::vector<TrayMenuItem>> m_tray_menu_stack;
-    bool                                  m_tray_hover_queued = false;
+    TrayMenuItem                          m_tray_hover_item;
+    size_t                                m_tray_hover_level       = 0;
+    int                                   m_tray_hover_x           = 0;
+    int                                   m_tray_hover_y           = 0;
+    int                                   m_tray_hover_parent_left = 0;
+    bool                                  m_tray_hover_open        = false;
+    bool                                  m_tray_hover_valid       = false;
+    bool                                  m_tray_hover_queued      = false;
+    CSharedPointer<IWindow>               m_icon_tip;
+    CAtomicSharedPointer<CTimer>          m_tip_timer;
+    int                                   m_tip_gx = 0;
+    int                                   m_tip_gy = 0;
+    int                                   m_tip_w  = 0;
+    int                                   m_tip_h  = 0;
     CSharedPointer<CColumnLayoutElement>  m_menu_layout;
     CSharedPointer<CTextboxElement>       m_search_box;
     CSharedPointer<CTextElement>          m_clock;
@@ -459,16 +544,19 @@ void DeskUi::hide_osd() {
 void DeskUi::close_menu() {
     m_menu_open         = false;
     m_tray_hover_queued = false;
+    m_tray_hover_valid  = false;
     m_pinned            = false;
     m_category.clear();
+    if (m_tip_timer)
+        m_tip_timer->cancel();
+    close_icon_tip();
+    close_tray_from(0);
     if (m_menu)
         m_menu->close();
     if (m_flyout)
         m_flyout->close();
     if (m_dismiss)
         m_dismiss->close();
-    if (m_tray_popup)
-        m_tray_popup->close();
 }
 
 void DeskUi::power(const std::string& action) {
@@ -628,7 +716,10 @@ void DeskUi::rebuild_menu() {
             ->size(bar_size(1, 2))
             ->commence();
     };
-    auto below_categories = [this](const Vector2D&) { leave_categories(); };
+    auto below_categories = [this](const Vector2D&) {
+        leave_categories();
+        queue_dismiss_tray_tree();
+    };
     m_search_box = CTextboxBuilder::begin()
                        ->placeholder("Search apps…")
                        ->defaultText(std::string{m_search})
@@ -804,7 +895,25 @@ void DeskUi::rebuild_menu() {
                               })
                               ->commence();
             button->setReceivesMouse(true);
-            button->setMouseEnter(below_categories);
+            button->setMouseEnter([this, label, below_categories](const Vector2D& at) {
+                below_categories(at);
+                if (m_tip_timer)
+                    m_tip_timer->cancel();
+                m_tip_timer = m_backend->addTimer(std::chrono::milliseconds(500), [this, label](CAtomicSharedPointer<CTimer>, void*) { show_icon_tip(label); }, nullptr);
+            });
+            button->setMouseLeave([this]() {
+                if (m_tip_timer)
+                    m_tip_timer->cancel();
+                m_backend->addIdle([this] {
+                    int x = 0;
+                    int y = 0;
+                    if (m_icon_tip && read_pointer(x, y) &&
+                        (box_contains(x, y, m_tip_gx, m_tip_gy, m_tip_w, m_tip_h, 4) ||
+                         box_contains(x, y, m_tip_gx, m_tip_gy + m_tip_h, m_tip_w, 36, 0)))
+                        return;
+                    close_icon_tip();
+                });
+            });
             button->setMouseButton([this, icon](Input::eMouseButton button, bool down) {
                 if (!down || button != Input::MOUSE_BUTTON_MIDDLE)
                     return;
@@ -820,7 +929,6 @@ void DeskUi::rebuild_menu() {
                 picture->setPositionFlag(IElement::HT_POSITION_FLAG_CENTER, true);
                 button->addChild(picture);
             }
-            button->setTooltip(std::string{label});
             tray_row->addChild(button);
         }
         tray_row->setReceivesMouse(true);
@@ -1024,38 +1132,161 @@ void DeskUi::open_menu_at_cursor() {
     tick_clock();
 }
 
+void DeskUi::close_icon_tip() {
+    if (m_icon_tip)
+        m_icon_tip->close();
+    m_icon_tip.reset();
+}
+
+void DeskUi::show_icon_tip(const std::string& text) {
+    close_icon_tip();
+    if (!m_menu_open || text.empty())
+        return;
+    const float width  = std::max(24.F, measure_label(text, m_palette->m_vars.fontFamily, static_cast<float>(m_palette->m_vars.fontSize)).width + 16.F);
+    const int   tip_w  = static_cast<int>(std::ceil(width));
+    const int   tip_h  = 28;
+    int         x      = 8;
+    int         y      = 8;
+    read_pointer(x, y);
+    std::string monitors_json;
+    run_capture({hyprctl_bin(), "monitors", "-j"}, monitors_json);
+    const auto place = place_popup(x, y - tip_h - 8, tip_w, tip_h, 0, false, parse_monitors(monitors_json));
+    m_tip_gx         = place.global_x;
+    m_tip_gy         = place.global_y;
+    m_tip_w          = tip_w;
+    m_tip_h          = tip_h;
+    auto background  = CRectangleBuilder::begin()
+                          ->color([this] { return m_palette->m_colors.base; })
+                          ->borderColor([this] { return m_palette->m_colors.alternateBase; })
+                          ->borderThickness(1)
+                          ->rounding(m_palette->m_vars.smallRounding)
+                          ->size(percent_box(1, 1))
+                          ->commence();
+    background->setReceivesMouse(true);
+    // The toolkit tooltip closes itself inside mouseLeave and frees the window
+    // that is still handling the pointer. Close this label on the next idle.
+    background->setMouseLeave([this]() {
+        m_backend->addIdle([this] {
+            int px = 0;
+            int py = 0;
+            if (read_pointer(px, py) && box_contains(px, py, m_tip_gx, m_tip_gy, m_tip_w, m_tip_h, 4))
+                return;
+            close_icon_tip();
+        });
+    });
+    auto label = CTextBuilder::begin()->text(std::string{text})->async(false)->align(HT_FONT_ALIGN_CENTER)->size(percent_box(1, 1))->commence();
+    background->addChild(label);
+    m_icon_tip = CWindowBuilder::begin()
+                     ->type(HT_WINDOW_LAYER)
+                     ->appClass("hyprdesk-tip")
+                     ->appTitle("Icon")
+                     ->preferredSize({static_cast<double>(tip_w), static_cast<double>(tip_h)})
+                     ->anchor(kAnchorTopLeft)
+                     ->marginTopLeft({static_cast<double>(place.local_x), static_cast<double>(place.local_y)})
+                     ->exclusiveZone(-1)
+                     ->layer(3)
+                     ->kbInteractive(0)
+                     ->commence();
+    m_icon_tip->m_rootElement->addChild(background);
+    m_icon_tip->open();
+}
+
+void DeskUi::close_tray_from(size_t level) {
+    while (m_tray_layers.size() > level) {
+        if (m_tray_layers.back().window)
+            m_tray_layers.back().window->close();
+        m_tray_layers.pop_back();
+    }
+}
+
+bool DeskUi::pointer_over_tray_tree() {
+    int x = 0;
+    int y = 0;
+    if (!read_pointer(x, y))
+        return false;
+    for (const auto& layer : m_tray_layers) {
+        if (box_contains(x, y, layer.gx, layer.gy, layer.width, layer.height, 12))
+            return true;
+    }
+    return false;
+}
+
+void DeskUi::queue_dismiss_tray_tree() {
+    if (m_tray_layers.empty())
+        return;
+    m_backend->addIdle([this] {
+        if (!m_menu_open)
+            return;
+        if (pointer_over_tray_tree())
+            return;
+        close_tray_from(0);
+    });
+}
+
+void DeskUi::queue_tray_hover(const TrayMenuItem& item, size_t level, int prefer_x, int prefer_y, int parent_left, bool open_child) {
+    if (!m_menu_open)
+        return;
+    m_tray_hover_item        = item;
+    m_tray_hover_level       = level;
+    m_tray_hover_x           = prefer_x;
+    m_tray_hover_y           = prefer_y;
+    m_tray_hover_parent_left = parent_left;
+    m_tray_hover_open        = open_child;
+    m_tray_hover_valid       = true;
+    if (m_tray_hover_queued)
+        return;
+    m_tray_hover_queued = true;
+    m_backend->addIdle([this] {
+        m_tray_hover_queued = false;
+        if (!m_menu_open || !m_tray_hover_valid)
+            return;
+        const bool open_child  = m_tray_hover_open;
+        const auto item        = m_tray_hover_item;
+        const auto level       = m_tray_hover_level;
+        const int  prefer_x    = m_tray_hover_x;
+        const int  prefer_y    = m_tray_hover_y;
+        const int  parent_left = m_tray_hover_parent_left;
+        m_tray_hover_valid     = false;
+        if (!open_child) {
+            close_tray_from(level + 1);
+            return;
+        }
+        if (level + 1 < m_tray_layers.size() && m_tray_layers[level + 1].item_id == item.id)
+            return;
+        auto kids = item.children.empty() ? m_tray.submenu_items(m_tray_popup_icon, item.id) : item.children;
+        close_tray_from(level + 1);
+        if (kids.empty())
+            return;
+        open_tray_layer(kids, level + 1, item.id, prefer_x, prefer_y, parent_left, true);
+    });
+}
+
 void DeskUi::open_tray_menu(const TrayIcon& icon) {
-    m_tray_menu_stack.clear();
+    close_icon_tip();
+    close_tray_from(0);
     m_tray_popup_icon = icon;
     auto items        = m_tray.menu_items(icon);
     if (items.empty()) {
-        std::string cursor;
-        run_capture({hyprctl_bin(), "cursorpos"}, cursor);
         int x = 0;
         int y = 0;
-        parse_cursor_pos(cursor, x, y);
+        read_pointer(x, y);
         m_tray.context(icon, x, y);
         return;
     }
-    show_tray_menu(items);
-}
-
-void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
-    m_tray_hover_queued = false;
-    if (m_tray_popup)
-        m_tray_popup->close();
-    const int row_h  = 28;
-    const int width  = 240;
-    const int shown  = static_cast<int>(std::min<size_t>(items.size() + (m_tray_menu_stack.empty() ? 0 : 1), 14));
-    const int height = 16 + std::max(1, shown) * row_h;
-    std::string cursor;
-    std::string monitors_json;
-    run_capture({hyprctl_bin(), "cursorpos"}, cursor);
-    run_capture({hyprctl_bin(), "monitors", "-j"}, monitors_json);
     int x = 8;
     int y = 8;
-    parse_cursor_pos(cursor, x, y);
-    const auto anchor = clamp_on_output(x, y, width, height, parse_monitors(monitors_json));
+    read_pointer(x, y);
+    open_tray_layer(items, 0, -1, x, y, 0, false);
+}
+
+void DeskUi::open_tray_layer(const std::vector<TrayMenuItem>& items, size_t level, int item_id, int prefer_x, int prefer_y, int parent_left, bool beside) {
+    const int row_h  = 28;
+    const int width  = 240;
+    const int shown  = static_cast<int>(std::min<size_t>(items.size(), 14));
+    const int height = 16 + std::max(1, shown) * row_h;
+    std::string monitors_json;
+    run_capture({hyprctl_bin(), "monitors", "-j"}, monitors_json);
+    const auto place = place_popup(prefer_x, prefer_y, width, height, parent_left, beside, parse_monitors(monitors_json));
 
     auto background = CRectangleBuilder::begin()
                           ->color([this] { return m_palette->m_colors.background; })
@@ -1064,29 +1295,21 @@ void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
                           ->rounding(m_palette->m_vars.smallRounding)
                           ->size(percent_box(1, 1))
                           ->commence();
+    background->setReceivesMouse(true);
+    background->setMouseLeave([this]() { queue_dismiss_tray_tree(); });
     auto column = CColumnLayoutBuilder::begin()->gap(2)->size(fill_auto())->commence();
     column->setMargin(6);
-    if (!m_tray_menu_stack.empty()) {
-        column->addChild(CButtonBuilder::begin()
-                             ->label("Back")
-                             ->noBorder(true)
-                             ->size(bar_size(1, static_cast<float>(row_h)))
-                             ->onMainClick([this](CSharedPointer<CButtonElement>) {
-                                 if (m_tray_menu_stack.empty())
-                                     return;
-                                 auto previous = m_tray_menu_stack.back();
-                                 m_tray_menu_stack.pop_back();
-                                 m_backend->addIdle([this, previous] { show_tray_menu(previous); });
-                             })
-                             ->commence());
-    }
     if (items.empty())
         column->addChild(CTextBuilder::begin()->text("No menu items")->size(bar_size(1, static_cast<float>(row_h)))->commence());
+    int row_y = place.global_y + 6;
     for (const auto& item : items) {
         if (item.separator) {
             column->addChild(CRectangleBuilder::begin()->color([this] { return m_palette->m_colors.alternateBase; })->size(bar_size(1, 1))->commence());
+            row_y += 3;
             continue;
         }
+        const int   row_top = row_y;
+        row_y += row_h + 2;
         std::string label = item.label.empty() ? std::string{"Item"} : item.label;
         if (item.submenu)
             label += "  ›";
@@ -1096,15 +1319,9 @@ void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
                           ->noBorder(true)
                           ->enabled(item.enabled)
                           ->size(bar_size(1, static_cast<float>(row_h)))
-                          ->onMainClick([this, item, items](CSharedPointer<CButtonElement>) {
+                          ->onMainClick([this, item, level, row_top, parent_gx = place.global_x, parent_w = width](CSharedPointer<CButtonElement>) {
                               if (item.submenu) {
-                                  m_backend->addIdle([this, item, items] {
-                                      auto kids = item.children.empty() ? m_tray.submenu_items(m_tray_popup_icon, item.id) : item.children;
-                                      if (kids.empty())
-                                          return;
-                                      m_tray_menu_stack.push_back(items);
-                                      show_tray_menu(kids);
-                                  });
+                                  queue_tray_hover(item, level, parent_gx + parent_w + 6, row_top, parent_gx, true);
                                   return;
                               }
                               if (!item.enabled)
@@ -1113,42 +1330,44 @@ void DeskUi::show_tray_menu(const std::vector<TrayMenuItem>& items) {
                               m_backend->addIdle([this] { close_menu(); });
                           })
                           ->commence();
-        if (item.submenu) {
-            button->setReceivesMouse(true);
-            // Closing this popup inside the enter callback frees the element
-            // updateFocus is still walking, and scheduleReposition segfaults.
-            button->setMouseEnter([this, item, items](const Vector2D&) {
-                if (m_tray_hover_queued || !m_menu_open)
-                    return;
-                m_tray_hover_queued = true;
-                m_backend->addIdle([this, item, items] {
-                    m_tray_hover_queued = false;
-                    if (!m_menu_open)
-                        return;
-                    auto kids = item.children.empty() ? m_tray.submenu_items(m_tray_popup_icon, item.id) : item.children;
-                    if (kids.empty())
-                        return;
-                    m_tray_menu_stack.push_back(items);
-                    show_tray_menu(kids);
-                });
+        button->setReceivesMouse(true);
+        button->setMouseLeave([this]() { queue_dismiss_tray_tree(); });
+        if (item.submenu)
+            button->setMouseEnter([this, item, level, row_top, parent_gx = place.global_x, parent_w = width](const Vector2D&) {
+                queue_tray_hover(item, level, parent_gx + parent_w + 6, row_top, parent_gx, true);
             });
-        }
+        else
+            button->setMouseEnter([this, level](const Vector2D&) { queue_tray_hover(TrayMenuItem{}, level, 0, 0, 0, false); });
         column->addChild(button);
     }
     background->addChild(column);
-    m_tray_popup = CWindowBuilder::begin()
+    TrayLayer layer;
+    layer.gx      = place.global_x;
+    layer.gy      = place.global_y;
+    layer.width   = width;
+    layer.height  = height;
+    layer.item_id = item_id;
+    layer.window  = CWindowBuilder::begin()
                        ->type(HT_WINDOW_LAYER)
                        ->appClass("hyprdesk-menu")
                        ->appTitle("Tray menu")
                        ->preferredSize({static_cast<double>(width), static_cast<double>(height)})
                        ->anchor(kAnchorTopLeft)
-                       ->marginTopLeft({static_cast<double>(anchor.left), static_cast<double>(anchor.top)})
+                       ->marginTopLeft({static_cast<double>(place.local_x), static_cast<double>(place.local_y)})
                        ->exclusiveZone(-1)
                        ->layer(3)
                        ->kbInteractive(0)
                        ->commence();
-    m_tray_popup->m_rootElement->addChild(background);
-    m_tray_popup->open();
+    layer.window->m_rootElement->addChild(background);
+    layer.window->open();
+    if (m_tray_layers.size() > level) {
+        if (m_tray_layers[level].window)
+            m_tray_layers[level].window->close();
+        m_tray_layers[level] = std::move(layer);
+        close_tray_from(level + 1);
+    } else {
+        m_tray_layers.push_back(std::move(layer));
+    }
 }
 
 void DeskUi::tick_clock() {
