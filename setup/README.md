@@ -280,6 +280,18 @@ Copy secrets onto a new box without going through `init-remote.sh`:
 ~/machine-setup/setup/utility/transfer-secrets.sh dragon@newbox.lan
 ```
 
+## OpenWrt host status (mist-dragon, beacon-dragon, wicket-dragon)
+
+`setup/files/status/host-status.sh` is the collector. It is a byte copy
+of the host-status image script. Copy it to `/usr/bin/host-status.sh`.
+`setup/files/status/host-status.init` is the procd script. Copy it to
+`/etc/init.d/host-status`, then enable it and start it. Install
+`mosquitto-client-nossl`. The init script publishes to `192.168.8.21`.
+Add both installed paths to `/etc/sysupgrade.conf`:
+
+- `/usr/bin/host-status.sh`
+- `/etc/init.d/host-status`
+
 ## Hyprland from source
 
 `install-hyprland-session` enables Ly and the user session units. It
