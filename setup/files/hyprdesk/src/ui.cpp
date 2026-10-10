@@ -242,12 +242,17 @@ void DeskUi::show_osd() {
                           ->commence();
     auto column = CColumnLayoutBuilder::begin()->gap(6)->size(percent_box(1, 1))->commence();
     column->setMargin(8);
+    // "112.5%" is the widest step. The old 44px window left ~28px after
+    // the margin, which clipped both that and "72.5%".
+    constexpr float osd_w = 96.F;
+    constexpr float osd_h = 220.F;
     m_osd_label = CTextBuilder::begin()
                       ->text(osd_label(m_volume))
                       ->align(HT_FONT_ALIGN_CENTER)
                       ->fontSize({CFontSize::HT_FONT_SMALL, 1.F})
                       ->color([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.text; })
-                      ->size(bar_size(1, 16))
+                      ->noEllipsize(true)
+                      ->size(box_size(osd_w - 16.F, 22.F))
                       ->commence();
     // Percent height of the whole overlay does not fit under the label, and
     // the layout then drops the track. Keep both sizes absolute.
@@ -279,7 +284,7 @@ void DeskUi::show_osd() {
                 ->type(HT_WINDOW_LAYER)
                 ->appClass("hyprdesk-osd")
                 ->appTitle("Volume")
-                ->preferredSize({44, 220})
+                ->preferredSize({osd_w, osd_h})
                 ->anchor(kAnchorTopLeft)
                 ->marginTopLeft({24, 24})
                 ->exclusiveZone(-1)
