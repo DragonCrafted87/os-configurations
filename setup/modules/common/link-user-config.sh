@@ -37,7 +37,4 @@ for source_path in "${config_dirs[@]}"; do
     esac
 
     ensure_symlink "$source_path" "$dest_path"
-    if [[ "$dest_name" == "quickshell" ]]; then
-        request_qs_restart
-    fi
 done

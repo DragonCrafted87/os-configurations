@@ -54,13 +54,17 @@ bool volume_overdrive(const Volume& volume) {
 }
 
 std::string osd_label(const Volume& volume) {
-    if (!volume.valid || volume.muted)
+    if (!volume.valid)
+        return "--%";
+    if (volume.muted)
         return "MUTE";
     return format_step_percent(volume.level);
 }
 
 std::string menu_volume_caption(const Volume& volume) {
-    if (!volume.valid || volume.muted || volume.level == 0)
+    if (!volume.valid)
+        return "--";
+    if (volume.muted || volume.level == 0)
         return "MUTE";
     return "VOL";
 }

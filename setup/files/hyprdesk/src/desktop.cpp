@@ -311,9 +311,129 @@ bool file_readable(const std::string& path) {
     return !path.empty() && access(path.c_str(), R_OK) == 0;
 }
 
+std::vector<std::string> inherits_of(const std::string& root) {
+    std::ifstream file(root + "/index.theme");
+    if (!file)
+        return {};
+    std::string section;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        const auto text = trim(line);
+        if (text.size() >= 2 && text.front() == '[' && text.back() == ']') {
+            section = text.substr(1, text.size() - 2);
+            continue;
+        }
+        if (section != "Icon Theme")
+            continue;
+        const auto eq = text.find('=');
+        if (eq == std::string::npos || trim(text.substr(0, eq)) != "Inherits")
+            continue;
+        std::vector<std::string> names;
+        std::string              current;
+        for (const char c : text.substr(eq + 1)) {
+            if (c == ',') {
+                const auto name = trim(current);
+                if (!name.empty())
+                    names.push_back(name);
+                current.clear();
+            } else {
+                current.push_back(c);
+            }
+        }
+        const auto name = trim(current);
+        if (!name.empty())
+            names.push_back(name);
+        return names;
+    }
+    return {};
+}
+
+std::string theme_directory(const std::vector<std::string>& bases, const std::string& theme) {
+    for (const auto& base : bases) {
+        const std::string root = base + "/" + theme;
+        if (std::filesystem::is_directory(root))
+            return root;
+    }
+    return {};
+}
+
+void add_theme_name(std::vector<std::string>& names, const std::string& theme) {
+    if (theme.empty())
+        return;
+    if (std::find(names.begin(), names.end(), theme) != names.end())
+        return;
+    names.push_back(theme);
+}
+
+std::string kdeglobals_path() {
+    if (const char* config = std::getenv("XDG_CONFIG_HOME"); config && *config)
+        return std::string(config) + "/kdeglobals";
+    if (const char* home = std::getenv("HOME"); home && *home)
+        return std::string(home) + "/.config/kdeglobals";
+    return {};
+}
+
+std::vector<std::string> default_theme_roots() {
+    const auto               bases = default_icon_bases();
+    std::vector<std::string> names;
+    const auto               path = kdeglobals_path();
+    if (!path.empty()) {
+        std::ifstream file(path);
+        if (file) {
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            add_theme_name(names, icon_theme_from_kdeglobals(buffer.str()));
+        }
+    }
+    for (size_t index = 0; index < names.size(); ++index) {
+        const auto root = theme_directory(bases, names[index]);
+        if (root.empty())
+            continue;
+        for (const auto& parent : inherits_of(root))
+            add_theme_name(names, parent);
+    }
+    add_theme_name(names, "hicolor");
+    std::vector<std::string> roots;
+    for (const auto& name : names) {
+        const auto root = theme_directory(bases, name);
+        if (root.empty() || std::find(roots.begin(), roots.end(), root) != roots.end())
+            continue;
+        roots.push_back(root);
+    }
+    return roots;
+}
+
 } // namespace
 
-std::string resolve_icon_path(const std::string& name, const std::vector<std::string>& icon_bases, const std::vector<std::string>& pixmap_dirs) {
+std::string icon_theme_from_kdeglobals(const std::string& text) {
+    std::string       section;
+    std::istringstream input(text);
+    std::string       line;
+    while (std::getline(input, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        const auto trimmed = trim(line);
+        if (trimmed.empty() || trimmed.front() == '#' || trimmed.front() == ';')
+            continue;
+        if (trimmed.size() >= 2 && trimmed.front() == '[' && trimmed.back() == ']') {
+            section = trimmed.substr(1, trimmed.size() - 2);
+            continue;
+        }
+        if (section != "Icons")
+            continue;
+        const auto eq = trimmed.find('=');
+        if (eq == std::string::npos)
+            continue;
+        if (trim(trimmed.substr(0, eq)) != "Theme")
+            continue;
+        return trim(trimmed.substr(eq + 1));
+    }
+    return {};
+}
+
+std::string resolve_icon_path(const std::string& name, const std::vector<std::string>& theme_roots, const std::vector<std::string>& pixmap_dirs) {
     if (name.empty())
         return {};
     if (name.front() == '/' || name.front() == '~') {
@@ -348,25 +468,62 @@ std::string resolve_icon_path(const std::string& name, const std::vector<std::st
     const char* bitmap_exts[] = {".png", ".xpm", ".jpg", ".jpeg"};
     const char* svg_exts[]    = {".svg"};
     const char* contexts[]    = {"apps", "places", "devices", "mimetypes", "status", "categories", "emblems", "actions"};
-    const char* sizes[]       = {"scalable", "64x64", "48x48", "32x32", "22x22", "24x24", "256x256", "128x128", "96x96", "512x512", "16x16"};
+    // A scalable drawing is nearer the 22px row than a 256px bitmap, and
+    // farther than a 64px bitmap.
+    constexpr int kScalableDistance = 48;
+    struct SizeDir {
+        const char* dir;
+        int         distance;
+    };
+    const SizeDir sizes[] = {
+        {"22x22", 0},
+        {"24x24", 2},
+        {"16x16", 6},
+        {"32x32", 10},
+        {"48x48", 26},
+        {"64x64", 42},
+        {"scalable", kScalableDistance},
+        {"96x96", 74},
+        {"128x128", 106},
+        {"256x256", 234},
+        {"512x512", 490},
+    };
 
     auto wanted = [&](const char* ext) { return only_ext.empty() || only_ext == ext; };
-    auto themed = [&](const char* const* exts, size_t count) -> std::string {
-        for (const auto& base : icon_bases) {
+    struct Hit {
+        int         distance = 0;
+        int         kind     = 0;
+        std::string path;
+        bool        found = false;
+    };
+    auto better = [](const Hit& hit, int distance, int kind) {
+        if (!hit.found)
+            return true;
+        if (distance != hit.distance)
+            return distance < hit.distance;
+        return kind < hit.kind;
+    };
+    for (const auto& root : theme_roots) {
+        Hit best;
+        for (const auto& size : sizes) {
             for (const char* context : contexts) {
-                for (const char* size : sizes) {
-                    for (size_t index = 0; index < count; ++index) {
-                        if (!wanted(exts[index]))
-                            continue;
-                        const std::string path = base + "/hicolor/" + size + "/" + context + "/" + stem + exts[index];
-                        if (file_readable(path))
-                            return path;
-                    }
+                for (const char* ext : bitmap_exts) {
+                    if (!wanted(ext))
+                        continue;
+                    const std::string path = root + "/" + size.dir + "/" + context + "/" + stem + ext;
+                    if (file_readable(path) && better(best, size.distance, 0))
+                        best = Hit{size.distance, 0, path, true};
                 }
+                if (!wanted(".svg"))
+                    continue;
+                const std::string path = root + "/" + size.dir + "/" + context + "/" + stem + ".svg";
+                if (file_readable(path) && better(best, size.distance, 1))
+                    best = Hit{size.distance, 1, path, true};
             }
         }
-        return {};
-    };
+        if (best.found)
+            return best.path;
+    }
     auto pixmap = [&](const char* const* exts, size_t count) -> std::string {
         for (const auto& dir : pixmap_dirs) {
             for (size_t index = 0; index < count; ++index) {
@@ -380,11 +537,7 @@ std::string resolve_icon_path(const std::string& name, const std::vector<std::st
         return {};
     };
 
-    if (const auto hit = themed(bitmap_exts, 4); !hit.empty())
-        return hit;
     if (const auto hit = pixmap(bitmap_exts, 4); !hit.empty())
-        return hit;
-    if (const auto hit = themed(svg_exts, 1); !hit.empty())
         return hit;
     return pixmap(svg_exts, 1);
 }
@@ -393,7 +546,7 @@ std::string resolve_icon_path(const std::string& name) {
     static std::unordered_map<std::string, std::string> cache;
     if (const auto it = cache.find(name); it != cache.end())
         return it->second;
-    const auto found = resolve_icon_path(name, default_icon_bases(), default_pixmap_dirs());
+    const auto found = resolve_icon_path(name, default_theme_roots(), default_pixmap_dirs());
     cache.emplace(name, found);
     return found;
 }

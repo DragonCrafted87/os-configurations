@@ -298,8 +298,9 @@ Ly session name is **Hyprland**, with
 `hypridle`, `hyprpolkitagent`, the Hyprland portal, `hyprsunset`, and
 `hyprpaper` exec `/usr/local`. hyprpwcenter is the volume UI.
 hyprdesk is the start menu and volume OSD, on its own `.hyprdesk-stamp`,
-so installing it does not rebuild the prefix. `config/hypr/conf.d/shell.conf`
-decides whether the session starts it.
+so installing it does not rebuild the prefix. `hyprdesk.service` starts
+it after `hyprland-session.service`. Super+Space runs
+`/usr/local/bin/hyprdesk --toggle`.
 
 OpenMandriva has no single published dep list. The module translates the
 Fedora set from [Hyprland discussion #284](https://github.com/hyprwm/Hyprland/discussions/284)
@@ -512,7 +513,6 @@ Docker image manager is a standalone placeholder, not part of every server:
 ```text
 config/hyprland    ->  ~/.config/hyprland
 config/kitty       ->  ~/.config/kitty
-config/quickshell  ->  ~/.config/quickshell
 ```
 
 Drop another folder under `config/` and the next role run links it. No

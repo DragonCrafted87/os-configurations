@@ -2,12 +2,12 @@
 #include "tray.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <sys/wait.h>
 #include <unistd.h>
 
 namespace {
@@ -41,6 +41,10 @@ bool run_self_test() {
     EXPECT(!volume_overdrive(Volume{.level = 1.0, .muted = false, .valid = true}));
     EXPECT(!volume_overdrive(Volume{}));
     EXPECT(std::abs(volume_fill(half) - (0.5 / 1.5)) < 0.0001);
+    EXPECT(osd_label(Volume{}) == "--%");
+    EXPECT(menu_volume_caption(Volume{}) == "--");
+    EXPECT(volume_fill(Volume{}) == 0);
+    EXPECT(menu_volume_caption(Volume{.level = 0, .muted = false, .valid = true}) == "MUTE");
     EXPECT(osd_label(muted) == "MUTE");
     EXPECT(osd_label(half) == "50%");
     EXPECT(osd_label(eighth) == "12.5%");
@@ -65,6 +69,8 @@ bool run_self_test() {
         R"([{"id":0,"name":"A","x":0,"y":0,"width":1920,"height":1080,"focused":true,"activeWorkspace":{"id":3,"name":"3"}},{"id":1,"name":"B","x":1920,"y":0,"width":1280,"height":1024,"focused":false,"activeWorkspace":{"id":2,"name":"2"}}])";
     auto monitors = parse_monitors(monitors_json);
     EXPECT(monitors.size() == 2);
+    EXPECT(monitors[0].name == "A");
+    EXPECT(monitors[1].name == "B");
     EXPECT(monitors[0].focused && monitors[0].workspace == 3);
     EXPECT(monitors[0].workspace_name == "3");
     EXPECT(monitors[1].x == 1920 && !monitors[1].focused);
@@ -73,13 +79,28 @@ bool run_self_test() {
     EXPECT(placed.workspace == 3);
     EXPECT(placed.workspace_name == "3");
     EXPECT(placed.menu_w == 422);
+    EXPECT(placed.monitor_name == "A");
     EXPECT(!placed.flyout_on_left);
     auto edge = place_menu(1900, 1000, monitors, 400);
+    auto wide = edge;
+    fit_menu_width(wide, edge.menu_w + 40);
+    EXPECT(wide.menu_w == edge.menu_w + 40);
+    EXPECT(wide.menu_left == 1920 - wide.menu_w - 8);
+    EXPECT(wide.menu_left + wide.menu_w <= 1920 - 8);
     EXPECT(edge.menu_left == 1920 - edge.menu_w - 8);
+    auto held = edge;
+    fit_menu_width(held, edge.menu_w - 10);
+    EXPECT(held.menu_w == edge.menu_w);
+    Placement narrow;
+    narrow.menu_w    = 0;
+    narrow.monitor_w = 1920;
+    fit_menu_width(narrow, 0);
+    EXPECT(narrow.menu_w == 1);
     EXPECT(edge.menu_top == 1080 - edge.menu_h - 8);
     EXPECT(edge.flyout_on_left);
     auto other = place_menu(2000, 10, monitors, 400);
     EXPECT(other.monitor_w == 1280);
+    EXPECT(other.monitor_name == "B");
     EXPECT(other.workspace == 2 && other.workspace_name == "2");
     const char* named_json =
         R"([{"id":0,"name":"A","x":0,"y":0,"width":1920,"height":1080,"focused":true,"activeWorkspace":{"id":-1337,"name":"code-1"}}])";
@@ -144,13 +165,27 @@ StartupWMClass=kitty
         std::ofstream absolute(icon_root + "/absolute.png");
         absolute << "png";
     }
-    const std::vector<std::string> bases{icon_root};
+    std::filesystem::create_directories(icon_root + "/later/22x22/apps");
+    {
+        std::ofstream big_svg(hicolor + "/scalable/apps/big.svg");
+        big_svg << "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        std::ofstream big_png(hicolor + "/256x256/apps/big.png");
+        big_png << "png";
+        std::ofstream later(icon_root + "/later/22x22/apps/near.png");
+        later << "png";
+    }
+    const std::vector<std::string> bases{hicolor};
     const std::vector<std::string> pix{icon_root + "/pix"};
     EXPECT(resolve_icon_path("multimc", bases, pix) == hicolor + "/scalable/apps/multimc.png");
     EXPECT(resolve_icon_path("boinc", bases, pix) == hicolor + "/64x64/apps/boinc.png");
     EXPECT(resolve_icon_path("only", bases, pix) == hicolor + "/scalable/apps/only.svg");
     EXPECT(resolve_icon_path("guild-wars", bases, pix) == hicolor + "/256x256/apps/guild-wars.png");
     EXPECT(resolve_icon_path("near", bases, pix) == hicolor + "/22x22/apps/near.png");
+    EXPECT(resolve_icon_path("big", bases, pix) == hicolor + "/scalable/apps/big.svg");
+    EXPECT(resolve_icon_path("near", std::vector<std::string>{hicolor, icon_root + "/later"}, pix) == hicolor + "/22x22/apps/near.png");
+    EXPECT(resolve_icon_path("near", std::vector<std::string>{icon_root + "/later", hicolor}, pix) == icon_root + "/later/22x22/apps/near.png");
+    EXPECT(icon_theme_from_kdeglobals("[Icons]\nTheme=Tango\n\n[KDE]\nTheme=breeze_cursors\n") == "Tango");
+    EXPECT(icon_theme_from_kdeglobals("[KDE]\nTheme=breeze_cursors\n").empty());
     EXPECT(resolve_icon_path("only-pixmap", bases, pix) == icon_root + "/pix/only-pixmap.png");
     EXPECT(resolve_icon_path("missing", bases, pix).empty());
     EXPECT(resolve_icon_path(icon_root + "/absolute.png", bases, pix) == icon_root + "/absolute.png");
@@ -218,13 +253,26 @@ StartupWMClass=kitty
     EXPECT(argb_to_png(1, 1, pixel, 4) == png);
     EXPECT(argb_to_png(0, 1, pixel, 4).empty());
     EXPECT(argb_to_png(1, 1, pixel, 2).empty());
+    EXPECT(tray_popup_height({}) == 12 + 28);
+    TrayMenuItem tray_row;
+    TrayMenuItem tray_gap;
+    tray_gap.separator = true;
+    EXPECT(tray_popup_height({tray_row, tray_gap, tray_row}) == 12 + 28 + 2 + 1 + 2 + 28);
+
+    EXPECT(capture_wait_code(-1, 0, ECHILD) == 0);
+    EXPECT(capture_wait_code(-1, 0, EINTR) == 1);
+    EXPECT(capture_wait_code(1, 0, 0) == 0);
+    EXPECT(capture_wait_code(1, 256, 0) == 1);
+    EXPECT(capture_wait_code(1, 9, 0) == 1);
+    std::string captured;
+    EXPECT(run_capture({"/bin/echo", "ok"}, captured) == 0);
+    EXPECT(captured.find("ok") != std::string::npos);
+    EXPECT(run_capture({"/bin/false"}, captured) != 0);
 
     run_detached({"/bin/true"});
     bool reaped = false;
     for (int i = 0; i < 50 && !reaped; ++i) {
-        int   status = 0;
-        pid_t got    = waitpid(-1, &status, WNOHANG);
-        if (got > 0)
+        if (reap_detached() > 0)
             reaped = true;
         else
             usleep(10000);

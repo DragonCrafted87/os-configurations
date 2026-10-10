@@ -6,6 +6,7 @@
 #include <vector>
 
 struct Monitor {
+    std::string name;
     int         x                = 0;
     int         y                = 0;
     int         width            = 1920;
@@ -22,8 +23,11 @@ struct Placement {
     int  menu_h          = 280;
     int         workspace      = 1;
     std::string workspace_name = "1";
-    int  monitor_w       = 1920;
-    int  monitor_h       = 1080;
+    int         monitor_w    = 1920;
+    int         monitor_h    = 1080;
+    int         monitor_x    = 0;
+    int         monitor_y    = 0;
+    std::string monitor_name;
     bool flyout_on_left  = false;
     int  flyout_left     = 0;
     int  flyout_w        = 260;
@@ -31,6 +35,7 @@ struct Placement {
 };
 
 int                      menu_width_for(int monitor_w);
+void                     fit_menu_width(Placement& place, int content_w);
 const char*              hyprctl_bin();
 bool                     parse_cursor_pos(const std::string& line, int& x, int& y);
 std::vector<Monitor>     parse_monitors(const std::string& json);
@@ -82,7 +87,8 @@ bool                        class_matches_needle(const std::string& klass, const
 std::string                 strip_exec_field_codes(const std::string& exec);
 std::vector<std::string>    split_exec(const std::string& exec);
 std::vector<DesktopEntry>   load_desktop_entries();
-std::string                 resolve_icon_path(const std::string& name, const std::vector<std::string>& icon_bases, const std::vector<std::string>& pixmap_dirs);
+std::string                 icon_theme_from_kdeglobals(const std::string& text);
+std::string                 resolve_icon_path(const std::string& name, const std::vector<std::string>& theme_roots, const std::vector<std::string>& pixmap_dirs);
 std::string                 resolve_icon_path(const std::string& name);
 
 struct Client {
@@ -146,7 +152,9 @@ StatsText                read_stats(const std::optional<CpuSample>& earlier);
 
 bool run_self_test();
 
+int         capture_wait_code(int wait_rc, int wait_status, int err);
 int         run_capture(const std::vector<std::string>& args, std::string& output);
 void        run_detached(const std::vector<std::string>& args);
+int         reap_detached();
 std::string desk_socket_path();
 int         acquire_server_socket();

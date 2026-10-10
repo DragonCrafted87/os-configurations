@@ -1,24 +1,26 @@
 # Start menu requirements
 
 Normative rules for the hyprdesk start menu. The volume overlay is
-[`VOLUME-OSD-REQUIREMENTS.md`](VOLUME-OSD-REQUIREMENTS.md). `DESK_SHELL`
-in `conf.d/shell.conf` chooses the shell. The git value stays
-`quickshell`.
+[`VOLUME-OSD-REQUIREMENTS.md`](VOLUME-OSD-REQUIREMENTS.md). Super+Space
+runs `/usr/local/bin/hyprdesk --toggle`.
 
 The keywords are SHALL, SHALL NOT, RECOMMENDED, NOT RECOMMENDED, and
 OPTIONAL. They follow RFC 2119.
 
 ## Scope
 
-Super+Space runs `scripts/desk-shell.sh toggle`. When `DESK_SHELL` is
-`hyprtoolkit`, that toggle talks to hyprdesk. The menu layer namespace
-is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
-`hyprdesk-menu`.
+That toggle opens or closes this menu. The menu layer namespace is
+`hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
+`hyprdesk-menu`. The icon-name label is `hyprdesk-tip`.
 
 ## Open and close
 
-1. The menu SHALL open at the pointer on the focused monitor, and it
-   SHALL stay inside that monitor.
+1. The menu SHALL open at the pointer, on the monitor that holds the
+   cursor. That monitor's active workspace follows the cursor. The menu
+   SHALL stay on that monitor after it opens, including when the cursor
+   later moves. The flyout, the dismiss layer, a tray popup opened from
+   the menu, and the icon-name label SHALL stay on that same monitor.
+   The menu SHALL stay inside that monitor.
 1. The menu width SHALL be `max(380, min(460, round(monitor width * 0.22)))`.
 1. Escape, a click on the empty area outside the menu, and another toggle
    SHALL close the menu.
@@ -41,10 +43,13 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
    SHALL title the flyout Search.
 1. The flyout SHALL show each matching app by name, left aligned. When the
    desktop entry has an icon, the row SHALL show that icon and then the
-   name. The icon SHALL come from the active theme, or from hicolor under
-   the XDG data directories when the theme does not have it. A bitmap in
-   that tree SHALL be used ahead of an SVG. An empty result SHALL say
-   that no apps match.
+   name. The icon SHALL come from the theme named by `Theme` under
+   `[Icons]` in `${XDG_CONFIG_HOME:-~/.config}/kdeglobals`, then from
+   the themes named by that theme's `Inherits`, then from hicolor under
+   the XDG data directories. hyprdesk SHALL prefer the closest size to the
+   row. Within one size, a bitmap SHALL be used ahead of an SVG. A
+   bitmap of a different size SHALL NOT hide a closer SVG. An empty
+   result SHALL say that no apps match.
 1. A left click on an app SHALL focus a window that is already open for
    that app and move it to the workspace that was current on the monitor
    under the menu. Otherwise it SHALL launch the app on that workspace.
@@ -60,10 +65,9 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 1. Min and All SHALL switch that filter. Refresh SHALL reread the clients.
    The Refresh label SHALL stay on one line.
 1. A left click SHALL move that window onto the workspace that was
-   current on the monitor under the menu, then focus it, then close the
-   menu. The move and the focus SHALL be ordered dispatches. The
-   minimized workspace SHALL NOT be shown. `special:minimized` SHALL be
-   closed again if it becomes the visible special workspace.
+   current on the menu's monitor when the menu opened, then focus it,
+   then close the menu. The window SHALL end focused on that workspace.
+   The minimized workspace SHALL NOT be left visible.
 1. A right click SHALL close that window.
 1. An empty list SHALL say so. A long title SHALL ellipsize instead of
    stretching the menu.
@@ -71,25 +75,31 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 ## Tray
 
 1. hyprdesk SHALL own `org.kde.StatusNotifierWatcher` while it runs.
-1. The tray row SHALL stay visible while items are registered. A long
+1. The tray row SHALL stay visible, including when no items are
+   registered. An empty tray SHALL still show one full row. A long
    window list SHALL shrink and scroll instead of pushing the tray out
    of the menu. Items that register while the menu is open SHALL appear
    without closing the menu.
 1. Each item SHALL show its theme icon when that icon exists, and
    otherwise the image from its `IconPixmap`. The button SHALL NOT cover
    that image with the item id.
-1. A left click SHALL activate the item. A middle click SHALL send the
-   secondary action. A vertical scroll SHALL scroll the item.
+1. A left click SHALL activate the item. When that item's action is a
+   menu, the left click SHALL open the same popup a right click opens.
+   A middle click SHALL send the secondary action. A vertical scroll
+   SHALL scroll the item. Activate and the secondary action SHALL use
+   the pointer position.
 1. A right click SHALL open that item's menu at the pointer. The popup
-   SHALL be only as large as its entries, and it SHALL stay on the
-   monitor under the pointer.
+   SHALL grow to hold its entries. An empty popup SHALL still show one
+   full row. The popup SHALL stay on the monitor the start menu was
+   opened on.
 1. A submenu SHALL open beside its parent when the pointer hovers that
    row. Parent menus SHALL stay open until the pointer leaves the whole
    menu tree, or until the pointer enters another part of the start menu.
-   Opening or closing one of those menus SHALL wait until the pointer
-   event has returned.
-1. The name of a tray icon SHALL be shown beside the pointer. Closing
-   that label SHALL wait until the pointer event has returned.
+   Those menus SHALL NOT close or free themselves in the same pointer
+   event that opened them.
+1. The name of a tray icon SHALL be shown beside the pointer. That label
+   SHALL NOT close or free itself in the same pointer event that opened
+   it. The label SHALL stay on the monitor the start menu was opened on.
 1. A left click on a menu entry that is not a submenu SHALL close the
    start menu.
 1. When the item has no menu layout, a fallback to the item's own context
@@ -100,10 +110,12 @@ is `hyprdesk`. The app flyout is `hyprdesk-flyout`. A tray popup is
 1. The row SHALL show a mute control, a slider, and the percent.
 1. The slider SHALL run from 0 to 150% in 2.5% steps. Dragging or
    scrolling it SHALL set the default sink and SHALL clear mute.
-1. The percent SHALL use the same text as the volume overlay, including
-   `72.5%`.
-1. The mute control SHALL toggle mute. Muted SHALL read MUTE on the
-   control and `0%` on the percent.
+1. The percent SHALL use the same numeric text as an unmuted volume
+   overlay, including `72.5%`. A muted sink SHALL show `0%`. A sink
+   hyprdesk cannot read SHALL show `--%`.
+1. The mute control SHALL toggle mute. A muted sink SHALL read `MUTE`
+   on the control. An unreadable sink SHALL read `--` on the control.
+   That caption is not mute.
 1. Above 100% the percent SHALL use the overdrive red.
 1. Moving this slider SHALL NOT show the volume overlay. Scrolling it
    SHALL NOT scroll the menu.

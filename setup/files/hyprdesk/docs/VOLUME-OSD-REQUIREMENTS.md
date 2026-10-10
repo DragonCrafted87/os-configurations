@@ -11,8 +11,9 @@ OPTIONAL. They follow RFC 2119.
 
 hyprdesk draws this overlay when the default PipeWire sink changes level
 or mute. The layer namespace is `hyprdesk-osd`. Keyboard volume keys still
-call `wpctl`. The menu slider follows the start menu document and uses
-the same step and the same percent text.
+call `wpctl`. The menu slider uses the same 2.5% step. Unmuted percent
+text is shared with the menu. Mute copy is separate: the overlay says
+`MUTE`, and the menu percent says `0%`.
 
 ## One overlay
 
@@ -21,14 +22,20 @@ the same step and the same percent text.
    SHALL NOT open another overlay.
 1. The overlay SHALL anchor to the top left with a 24px margin, on the
    overlay layer, and it SHALL NOT take keyboard focus.
+1. The overlay SHALL open on the monitor that holds the cursor. That
+   monitor's active workspace follows the cursor, so the overlay is on
+   the active workspace. Each time the overlay is shown, hyprdesk SHALL
+   place it on the monitor that holds the cursor then.
 1. The overlay SHALL stay up for 5 seconds after the last sink change,
    then hide. A new change SHALL restart that timer.
 1. A change the menu slider makes itself SHALL NOT pop the overlay.
+1. The overlay SHALL match the blur rule for `^hyprdesk-osd$`.
 
 ## Label
 
 1. The percent SHALL be centered at the top of the panel.
-1. A muted sink, or a sink hyprdesk cannot read, SHALL show `MUTE`.
+1. A muted sink SHALL show `MUTE`. Mute means the sink is actually muted.
+1. A sink hyprdesk cannot read SHALL show `--%`. That label is not mute.
 1. Otherwise the label SHALL be the sink level snapped to the 2.5% step,
    from `0%` through `150%`.
 1. A step that is not a whole percent SHALL keep one decimal. `72.5%`
@@ -44,7 +51,8 @@ the same step and the same percent text.
 1. The colored fill SHALL sit inside the track with a visible margin on
    every side. That margin SHALL remain when the level is `150%`.
 1. Fill height SHALL follow the snapped level divided by `1.5`. Mute
-   SHALL leave the track empty.
+   SHALL leave the track empty. An unreadable sink SHALL leave the track
+   empty.
 1. Above `100%`, the label, the panel border, and the fill SHALL use the
    overdrive red. At `100%` and below they SHALL use the palette text,
    border, and accent.
@@ -53,16 +61,12 @@ the same step and the same percent text.
 
 1. The desk step SHALL be 2.5 percentage points. The maximum SHALL be
    `150%`.
-1. `wpctl get-volume` prints two decimal places, so `0.725` comes back as
-   `0.73`. The label, the fill, and the overdrive color SHALL use the
-   2.5% step recovered from that print.
+1. The label, the fill, and the overdrive color SHALL show that snapped
+   step, from `0%` through `150%`.
 
 ## Panel
 
-1. A panel about three quarters of a 96px width is RECOMMENDED when the
-   widest label still fits, with a margin between the track and the
-   panel edge.
-1. If that width would clip a label, the panel SHALL grow until the label
-   fits.
+1. The panel SHALL be as wide as the widest label, plus the margin
+   between that label and the panel edge.
 1. Colors come from `hyprtoolkit.conf`. The panel SHALL NOT add a second
    window opacity on top of the palette background alpha.

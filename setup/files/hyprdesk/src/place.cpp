@@ -142,6 +142,8 @@ std::vector<Monitor> parse_monitors(const std::string& json) {
             monitor.height = static_cast<int>(*value);
         monitor.focused = field_bool(object, "focused");
         auto workspace   = object.find("\"activeWorkspace\"");
+        const auto head  = workspace == std::string::npos ? object : object.substr(0, workspace);
+        monitor.name     = field_string(head, "name");
         if (workspace != std::string::npos) {
             const auto block = object.substr(workspace);
             if (auto id = field_number(block, "id"))
@@ -184,8 +186,11 @@ Placement place_menu(int cursor_x, int cursor_y, const std::vector<Monitor>& mon
     if (!monitor)
         return place;
 
-    place.monitor_w = monitor->width;
-    place.monitor_h = monitor->height;
+    place.monitor_w    = monitor->width;
+    place.monitor_h    = monitor->height;
+    place.monitor_x    = monitor->x;
+    place.monitor_y    = monitor->y;
+    place.monitor_name = monitor->name;
     place.workspace = monitor->workspace;
     place.workspace_name = monitor->workspace_name.empty() ? std::to_string(monitor->workspace) : monitor->workspace_name;
     place.menu_w    = menu_width_for(monitor->width);
@@ -209,6 +214,20 @@ Placement place_menu(int cursor_x, int cursor_y, const std::vector<Monitor>& mon
     else
         place.flyout_left = left + place.menu_w + place.flyout_gap;
     return place;
+}
+
+void fit_menu_width(Placement& place, int content_w) {
+    if (content_w > place.menu_w)
+        place.menu_w = std::min(place.monitor_w - 16, content_w);
+    if (place.menu_w < 1)
+        place.menu_w = 1;
+    if (place.menu_left + place.menu_w > place.monitor_w - 8)
+        place.menu_left = std::max(8, place.monitor_w - place.menu_w - 8);
+    place.flyout_on_left = (place.menu_left + place.menu_w + place.flyout_gap + place.flyout_w) > (place.monitor_w - 8);
+    if (place.flyout_on_left)
+        place.flyout_left = std::max(8, place.menu_left - place.flyout_w - place.flyout_gap);
+    else
+        place.flyout_left = place.menu_left + place.menu_w + place.flyout_gap;
 }
 
 Anchor clamp_on_output(int global_x, int global_y, int width, int height, const std::vector<Monitor>& monitors) {

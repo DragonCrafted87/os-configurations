@@ -12,6 +12,7 @@
 #include <sys/un.h>
 
 #include <cstring>
+#include <mutex>
 #include <vector>
 
 extern char** environ;
@@ -27,7 +28,42 @@ std::vector<char*> argv_of(const std::vector<std::string>& args) {
     return pointers;
 }
 
+std::mutex         g_detached_mu;
+std::vector<pid_t> g_detached;
+
+void remember_detached(pid_t pid) {
+    if (pid <= 0)
+        return;
+    std::lock_guard lock(g_detached_mu);
+    g_detached.push_back(pid);
+}
+
 } // namespace
+
+int capture_wait_code(int wait_rc, int wait_status, int err) {
+    if (wait_rc < 0)
+        return err == ECHILD ? 0 : 1;
+    if (WIFEXITED(wait_status))
+        return WEXITSTATUS(wait_status);
+    return 1;
+}
+
+int reap_detached() {
+    std::lock_guard    lock(g_detached_mu);
+    int                reaped = 0;
+    std::vector<pid_t> live;
+    live.reserve(g_detached.size());
+    for (const pid_t pid : g_detached) {
+        int status = 0;
+        const pid_t got = waitpid(pid, &status, WNOHANG);
+        if (got == pid)
+            ++reaped;
+        else if (got == 0)
+            live.push_back(pid);
+    }
+    g_detached.swap(live);
+    return reaped;
+}
 
 std::string desk_socket_path() {
     if (const char* runtime = std::getenv("XDG_RUNTIME_DIR"); runtime && *runtime)
@@ -89,18 +125,16 @@ int run_capture(const std::vector<std::string>& args, std::string& output) {
         output.append(buffer, static_cast<size_t>(got));
     close(pipes[0]);
     int wait_status = 0;
-    waitpid(pid, &wait_status, 0);
-    if (WIFEXITED(wait_status))
-        return WEXITSTATUS(wait_status);
-    return 1;
+    const pid_t waited = waitpid(pid, &wait_status, 0);
+    if (waited < 0)
+        return capture_wait_code(-1, 0, errno);
+    return capture_wait_code(1, wait_status, 0);
 }
 
 void run_detached(const std::vector<std::string>& args) {
     if (args.empty())
         return;
-    int status = 0;
-    while (waitpid(-1, &status, WNOHANG) > 0) {
-    }
+    reap_detached();
     // fork() from this process deadlocks: the volume thread can hold a
     // lock the child needs before posix_spawnp. Spawn from this thread.
     posix_spawn_file_actions_t actions;
@@ -113,9 +147,10 @@ void run_detached(const std::vector<std::string>& args) {
 #ifdef POSIX_SPAWN_SETSID
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSID);
 #endif
-    pid_t pid     = 0;
-    auto  copied  = argv_of(args);
-    posix_spawnp(&pid, copied[0], &actions, &attr, copied.data(), environ);
+    pid_t pid    = 0;
+    auto  copied = argv_of(args);
+    if (posix_spawnp(&pid, copied[0], &actions, &attr, copied.data(), environ) == 0)
+        remember_detached(pid);
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attr);
 }

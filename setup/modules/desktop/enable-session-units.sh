@@ -47,22 +47,11 @@ case "$role" in
         ;;
 esac
 
-# Desk chrome. The file in the dot-files tree is the source of truth.
-# A missing or unknown value stays on Quickshell.
-desk_shell_file="${CONFIG_SOURCE_DIR}/hypr/conf.d/shell.conf"
-desk_shell="quickshell"
-if [[ -f "$desk_shell_file" ]]; then
-    desk_shell="$(
-        grep -E '^DESK_SHELL=' "$desk_shell_file" | tail -n 1 | cut -d= -f2- | tr -d '[:space:]' || true
-    )"
+# hyprdesk is the start menu and volume overlay. Disable a unit left
+# enabled by an older setup. disable_user_service does not stop it.
+disable_user_service qs-startmenu.service
+if systemctl --user is-active --quiet qs-startmenu.service 2>/dev/null; then
+    log "stop qs-startmenu.service"
+    run systemctl --user stop qs-startmenu.service || true
 fi
-case "$desk_shell" in
-    hyprtoolkit)
-        disable_user_service qs-startmenu.service
-        enable_user_service hyprdesk.service
-        ;;
-    *)
-        enable_user_service qs-startmenu.service
-        disable_user_service hyprdesk.service
-        ;;
-esac
+enable_user_service hyprdesk.service

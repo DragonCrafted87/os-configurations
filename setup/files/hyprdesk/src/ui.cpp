@@ -4,6 +4,7 @@
 #include "tray.hpp"
 
 #include <hyprtoolkit/core/Backend.hpp>
+#include <hyprtoolkit/core/Output.hpp>
 #include <hyprtoolkit/core/Timer.hpp>
 #include <hyprtoolkit/system/Icons.hpp>
 #include <hyprtoolkit/element/Button.hpp>
@@ -27,6 +28,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fcntl.h>
+#include <mutex>
 #include <sstream>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -109,10 +111,12 @@ CSharedPointer<CImageElement> image_for_name(IBackend* backend, const std::strin
             return sized(CImageBuilder::begin()->path(std::string{name}));
         return {};
     }
-    if (auto picture = backend->systemIcons()->lookupIcon(name); picture && picture->exists())
-        return sized(CImageBuilder::begin()->icon(picture));
+    // The file walk uses the KDE icon theme and the closest size. The
+    // toolkit lookup is only the fallback when that walk misses.
     if (const auto path = resolve_icon_path(name); !path.empty())
         return CImageBuilder::begin()->path(std::string{path})->fitMode(IMAGE_FIT_MODE_CONTAIN)->sync(true)->size(box_size(side, side))->commence();
+    if (auto picture = backend->systemIcons()->lookupIcon(name); picture && picture->exists())
+        return sized(CImageBuilder::begin()->icon(picture));
     if (!theme_path.empty()) {
         for (const char* ext : {"", ".png", ".svg", ".xpm"}) {
             std::string path = theme_path;
@@ -157,9 +161,48 @@ const Monitor* monitor_at(int x, int y, const std::vector<Monitor>& monitors) {
     return monitors.empty() ? nullptr : &monitors.front();
 }
 
-PopupPlace place_popup(int prefer_x, int prefer_y, int width, int height, int parent_left, bool beside, const std::vector<Monitor>& monitors) {
+const Monitor* named_monitor(const std::vector<Monitor>& monitors, const std::string& name) {
+    if (name.empty())
+        return nullptr;
+    for (const auto& monitor : monitors) {
+        if (monitor.name == name)
+            return &monitor;
+    }
+    return nullptr;
+}
+
+void bind_output(const CSharedPointer<CWindowBuilder>& builder, IBackend* backend, const std::string& port) {
+    if (!builder || !backend || port.empty())
+        return;
+    for (const auto& output : backend->getOutputs()) {
+        if (output && output->port() == port) {
+            builder->prefferedOutput(output);
+            return;
+        }
+    }
+}
+
+std::string output_under_cursor() {
+    std::string json;
+    if (run_capture({hyprctl_bin(), "monitors", "-j"}, json) != 0)
+        return {};
+    const auto monitors = parse_monitors(json);
+    int        x        = 0;
+    int        y        = 0;
+    if (read_pointer(x, y)) {
+        if (const auto* monitor = monitor_at(x, y, monitors))
+            return monitor->name;
+    }
+    for (const auto& monitor : monitors) {
+        if (monitor.focused)
+            return monitor.name;
+    }
+    return monitors.empty() ? std::string{} : monitors.front().name;
+}
+
+PopupPlace place_popup(int prefer_x, int prefer_y, int width, int height, int parent_left, bool beside, const std::vector<Monitor>& monitors, const Monitor* pinned) {
     PopupPlace place;
-    const Monitor* monitor = monitor_at(prefer_x, prefer_y, monitors);
+    const Monitor* monitor = pinned ? pinned : monitor_at(prefer_x, prefer_y, monitors);
     int            x       = prefer_x;
     int            y       = prefer_y;
     if (beside && monitor && x + width > monitor->x + monitor->width - 8)
@@ -275,6 +318,8 @@ class DeskUi {
     bool pointer_over_tray_tree();
     void show_icon_tip(const std::string& text);
     void close_icon_tip();
+    void sync_volume_row();
+    StatsText cached_stats();
     Volume read_volume() const;
 
     CSharedPointer<IBackend>              m_backend;
@@ -333,11 +378,16 @@ class DeskUi {
     CSharedPointer<CTextElement>          m_net_text;
     CSharedPointer<CTextElement>          m_volume_readout;
     CSharedPointer<CSliderElement>        m_menu_slider;
+    CSharedPointer<CButtonElement>        m_mute_button;
     CSharedPointer<CTextElement>          m_osd_label;
     CSharedPointer<CRectangleElement>     m_osd_track;
     CAtomicSharedPointer<CTimer>          m_osd_timer;
+    std::string                           m_osd_port;
+    bool                                  m_volume_paint = false;
     std::atomic<bool>                     m_stop{false};
+    std::mutex                            m_stats_mu;
     std::thread                           m_volume_thread;
+    std::thread                           m_stats_thread;
 };
 
 DeskUi::DeskUi(bool open_menu, int listen_fd) : m_backend(IBackend::create()), m_palette(m_backend->getPalette()), m_listen(listen_fd) {
@@ -346,6 +396,22 @@ DeskUi::DeskUi(bool open_menu, int listen_fd) : m_backend(IBackend::create()), m
         m_poke = pipes[0];
     m_volume = read_volume();
     m_apps   = load_desktop_entries();
+    m_cpu    = read_cpu_sample();
+    m_stats  = read_stats(std::nullopt);
+    m_stats_thread = std::thread([this] {
+        auto earlier = m_cpu;
+        while (!m_stop.load()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (m_stop.load())
+                break;
+            auto now   = read_cpu_sample();
+            auto stats = read_stats(earlier);
+            earlier    = now;
+            std::lock_guard lock(m_stats_mu);
+            m_stats = std::move(stats);
+            m_cpu   = now;
+        }
+    });
     if (m_tray.start() && m_tray.fd() >= 0) {
         m_backend->addFd(m_tray.fd(), [this] {
             const auto before = m_tray.generation();
@@ -417,8 +483,24 @@ void DeskUi::refresh_volume() {
     if (m_adjusting)
         return;
     if (m_menu_open)
-        m_backend->addIdle([this] { rebuild_menu(); });
+        sync_volume_row();
     show_osd();
+}
+
+void DeskUi::sync_volume_row() {
+    m_volume_paint = true;
+    if (m_menu_slider)
+        m_menu_slider->rebuild()->val(static_cast<float>(m_volume.valid && !m_volume.muted ? m_volume.level : 0.0))->commence();
+    if (m_volume_readout)
+        m_volume_readout->setText(menu_volume_percent(m_volume));
+    if (m_mute_button)
+        m_mute_button->setLabel(menu_volume_caption(m_volume));
+    m_volume_paint = false;
+}
+
+StatsText DeskUi::cached_stats() {
+    std::lock_guard lock(m_stats_mu);
+    return m_stats;
 }
 
 void DeskUi::apply_volume(double level, bool unmute) {
@@ -442,7 +524,7 @@ void DeskUi::toggle_mute() {
     m_volume    = read_volume();
     m_adjusting = false;
     if (m_menu_open)
-        m_backend->addIdle([this] { rebuild_menu(); });
+        sync_volume_row();
 }
 
 void DeskUi::show_osd() {
@@ -459,15 +541,22 @@ void DeskUi::show_osd() {
     // percent string gains or loses a digit.
     const float track_w = measure_label("100%", family, pt).width;
 
-    // One layer for the life of the process. Replacing it on each step
-    // leaves the previous surface up until the compositor destroys it.
+    // One layer until the cursor's monitor changes. Close the old surface
+    // before opening another, or the compositor keeps both.
+    const std::string port = output_under_cursor();
+    if (m_osd && port != m_osd_port) {
+        if (m_osd_timer)
+            m_osd_timer->cancel();
+        m_osd->close();
+        m_osd.reset();
+        m_osd_label.reset();
+        m_osd_track.reset();
+    }
     if (!m_osd) {
         float widest = track_w;
-        for (const char* sample : {"112.5%", "147.5%", "72.5%", "150%", "MUTE"})
+        for (const char* sample : {"112.5%", "147.5%", "72.5%", "150%", "MUTE", "--%"})
             widest = std::max(widest, measure_label(sample, family, pt).width);
-        // 72 is about three quarters of the old 96px panel. Grow if a
-        // label would touch the pad.
-        const float osd_w = std::max(72.F, widest + (panel_pad * 2.F));
+        const float osd_w = widest + (panel_pad * 2.F);
         auto background = CRectangleBuilder::begin()
                               ->color([this] { return m_palette->m_colors.background; })
                               ->borderColor([this] { return volume_overdrive(m_volume) ? over_red() : m_palette->m_colors.alternateBase; })
@@ -497,17 +586,19 @@ void DeskUi::show_osd() {
         column->addChild(m_osd_label);
         column->addChild(m_osd_track);
         background->addChild(column);
-        m_osd = CWindowBuilder::begin()
-                    ->type(HT_WINDOW_LAYER)
-                    ->appClass("hyprdesk-osd")
-                    ->appTitle("Volume")
-                    ->preferredSize({osd_w, osd_h})
-                    ->anchor(kAnchorTopLeft)
-                    ->marginTopLeft({24, 24})
-                    ->exclusiveZone(-1)
-                    ->layer(3)
-                    ->kbInteractive(0)
-                    ->commence();
+        auto builder = CWindowBuilder::begin()
+                           ->type(HT_WINDOW_LAYER)
+                           ->appClass("hyprdesk-osd")
+                           ->appTitle("Volume")
+                           ->preferredSize({osd_w, osd_h})
+                           ->anchor(kAnchorTopLeft)
+                           ->marginTopLeft({24, 24})
+                           ->exclusiveZone(-1)
+                           ->layer(3)
+                           ->kbInteractive(0);
+        bind_output(builder, m_backend.get(), port);
+        m_osd      = builder->commence();
+        m_osd_port = port;
         m_osd->m_rootElement->addChild(background);
     }
 
@@ -680,17 +771,18 @@ void DeskUi::rebuild_flyout() {
     const int count   = apps.empty() ? 1 : static_cast<int>(std::min(apps.size(), static_cast<size_t>(400)));
     const int natural = 16 + 8 + 4 + count * 36 + 16;
     const int height  = std::min(std::max(80, m_place.menu_h), std::max(80, natural));
-    m_flyout         = CWindowBuilder::begin()
-                   ->type(HT_WINDOW_LAYER)
-                   ->appClass("hyprdesk-flyout")
-                   ->appTitle("Apps")
-                   ->preferredSize({static_cast<double>(m_place.flyout_w), static_cast<double>(height)})
-                   ->anchor(kAnchorTopLeft)
-                   ->marginTopLeft({static_cast<double>(m_place.flyout_left), static_cast<double>(m_place.menu_top)})
-                   ->exclusiveZone(-1)
-                   ->layer(3)
-                   ->kbInteractive(0)
-                   ->commence();
+    auto      builder = CWindowBuilder::begin()
+                       ->type(HT_WINDOW_LAYER)
+                       ->appClass("hyprdesk-flyout")
+                       ->appTitle("Apps")
+                       ->preferredSize({static_cast<double>(m_place.flyout_w), static_cast<double>(height)})
+                       ->anchor(kAnchorTopLeft)
+                       ->marginTopLeft({static_cast<double>(m_place.flyout_left), static_cast<double>(m_place.menu_top)})
+                       ->exclusiveZone(-1)
+                       ->layer(3)
+                       ->kbInteractive(0);
+    bind_output(builder, m_backend.get(), m_place.monitor_name);
+    m_flyout = builder->commence();
     m_flyout->m_rootElement->addChild(background);
     m_flyout->open();
 }
@@ -702,9 +794,10 @@ void DeskUi::rebuild_menu() {
     const auto  windows  = windows_for_menu(m_clients, m_minimized, show_all);
     if (show_all)
         m_minimized = false;
-    m_menu_layout->clearChildren();
     m_menu_slider.reset();
     m_volume_readout.reset();
+    m_mute_button.reset();
+    m_menu_layout->clearChildren();
     auto upper = CColumnLayoutBuilder::begin()->gap(6)->size(fill_auto())->commence();
     auto rule  = [this] {
         return CRectangleBuilder::begin()
@@ -870,7 +963,7 @@ void DeskUi::rebuild_menu() {
     m_menu_layout->addChild(window_scroll);
 
     m_tray.refresh();
-    if (!m_tray.items().empty()) {
+    {
         auto tray_row = CRowLayoutBuilder::begin()->gap(4)->size(bar_size(1, 28))->commence();
         for (const auto& icon : m_tray.items()) {
             const auto label = !icon.title.empty() ? icon.title : (!icon.id.empty() ? icon.id : icon.service);
@@ -887,7 +980,14 @@ void DeskUi::rebuild_menu() {
                               ->size(box_size(28, 28))
                               ->onMainClick([this, icon](CSharedPointer<CButtonElement>) {
                                   leave_categories();
-                                  m_tray.activate(icon, 0, 0);
+                                  if (icon.item_is_menu) {
+                                      m_backend->addIdle([this, icon] { open_tray_menu(icon); });
+                                      return;
+                                  }
+                                  int x = 0;
+                                  int y = 0;
+                                  read_pointer(x, y);
+                                  m_tray.activate(icon, x, y);
                               })
                               ->onRightClick([this, icon](CSharedPointer<CButtonElement>) {
                                   leave_categories();
@@ -917,7 +1017,10 @@ void DeskUi::rebuild_menu() {
             button->setMouseButton([this, icon](Input::eMouseButton button, bool down) {
                 if (!down || button != Input::MOUSE_BUTTON_MIDDLE)
                     return;
-                m_tray.secondary(icon, 0, 0);
+                int x = 0;
+                int y = 0;
+                read_pointer(x, y);
+                m_tray.secondary(icon, x, y);
             });
             button->setMouseAxis([this, icon](Input::eAxisAxis axis, float delta) {
                 if (axis != Input::AXIS_AXIS_VERTICAL || delta == 0.F)
@@ -949,6 +1052,7 @@ void DeskUi::rebuild_menu() {
                            ->commence();
     mute_button->setReceivesMouse(true);
     mute_button->setMouseEnter(below_categories);
+    m_mute_button = mute_button;
     volume_row->addChild(mute_button);
     auto slider = CSliderBuilder::begin()
                       ->min(0)
@@ -956,12 +1060,13 @@ void DeskUi::rebuild_menu() {
                       ->val(static_cast<float>(m_volume.muted ? 0 : m_volume.level))
                       ->size(box_size(80, 28))
                       ->onChanged([this](CSharedPointer<CSliderElement>, float value) {
+                          if (m_volume_paint)
+                              return;
                           const double snapped = snap_volume(value);
                           if (std::abs(snapped - m_volume.level) < 0.001 && !m_volume.muted)
                               return;
                           apply_volume(snapped, true);
-                          if (m_volume_readout)
-                              m_volume_readout->setText(menu_volume_percent(m_volume));
+                          sync_volume_row();
                       })
                       ->commence();
     slider->setGrow(true, false);
@@ -973,10 +1078,7 @@ void DeskUi::rebuild_menu() {
             return;
         const double dir = delta < 0.F ? 1.0 : -1.0;
         apply_volume(snap_volume(m_volume.level + (dir * 0.025)), true);
-        if (m_menu_slider)
-            m_menu_slider->rebuild()->val(static_cast<float>(m_volume.muted ? 0.0 : m_volume.level))->commence();
-        if (m_volume_readout)
-            m_volume_readout->setText(menu_volume_percent(m_volume));
+        sync_volume_row();
     });
     volume_row->addChild(slider);
     m_volume_readout = CTextBuilder::begin()
@@ -989,8 +1091,7 @@ void DeskUi::rebuild_menu() {
     volume_row->addChild(m_volume_readout);
     m_menu_layout->addChild(volume_row);
 
-    m_stats = read_stats(m_cpu);
-    m_cpu   = read_cpu_sample();
+    m_stats = cached_stats();
     const std::string family = m_palette->m_vars.fontFamily;
     const float       pt     = static_cast<float>(m_palette->m_vars.fontSize);
     auto status_row = CRowLayoutBuilder::begin()->gap(10)->size(bar_size(1, 22))->commence();
@@ -1058,18 +1159,11 @@ void DeskUi::open_menu_at_cursor() {
     if (!cursor.empty())
         parse_cursor_pos(cursor, x, y);
     const int estimate = 20 + 36 + (10 * 30) + (9 * 6) + 22 + (6 * 34) + 28 + 32 + 22 + 36 + 32 + 40 + (14 * 6);
-    m_place            = place_menu(x, y, parse_monitors(monitors_json), estimate);
-    m_stats            = read_stats(m_cpu);
-    m_cpu              = read_cpu_sample();
+    m_place = place_menu(x, y, parse_monitors(monitors_json), estimate);
+    m_stats = cached_stats();
     m_tray.announce();
     const float status_w = status_fields_width(m_stats, m_palette->m_vars.fontFamily, static_cast<float>(m_palette->m_vars.fontSize)) + 36.F;
-    if (status_w > static_cast<float>(m_place.menu_w))
-        m_place.menu_w = std::min(m_place.monitor_w - 16, static_cast<int>(std::ceil(status_w)));
-    m_place.flyout_on_left = (m_place.menu_left + m_place.menu_w + m_place.flyout_gap + m_place.flyout_w) > (m_place.monitor_w - 8);
-    if (m_place.flyout_on_left)
-        m_place.flyout_left = std::max(8, m_place.menu_left - m_place.flyout_w - m_place.flyout_gap);
-    else
-        m_place.flyout_left = m_place.menu_left + m_place.menu_w + m_place.flyout_gap;
+    fit_menu_width(m_place, static_cast<int>(std::ceil(status_w)));
     m_clients          = parse_clients(clients_json);
     m_apps             = load_desktop_entries();
     m_menu_open        = true;
@@ -1086,15 +1180,16 @@ void DeskUi::open_menu_at_cursor() {
         if (down)
             m_backend->addIdle([this] { close_menu(); });
     });
-    m_dismiss = CWindowBuilder::begin()
-                    ->type(HT_WINDOW_LAYER)
-                    ->appClass("hyprdesk-dismiss")
-                    ->preferredSize({static_cast<double>(m_place.monitor_w), static_cast<double>(m_place.monitor_h)})
-                    ->anchor(kAnchorAll)
-                    ->exclusiveZone(-1)
-                    ->layer(2)
-                    ->kbInteractive(0)
-                    ->commence();
+    auto dismiss = CWindowBuilder::begin()
+                       ->type(HT_WINDOW_LAYER)
+                       ->appClass("hyprdesk-dismiss")
+                       ->preferredSize({static_cast<double>(m_place.monitor_w), static_cast<double>(m_place.monitor_h)})
+                       ->anchor(kAnchorAll)
+                       ->exclusiveZone(-1)
+                       ->layer(2)
+                       ->kbInteractive(0);
+    bind_output(dismiss, m_backend.get(), m_place.monitor_name);
+    m_dismiss = dismiss->commence();
     m_dismiss->m_rootElement->addChild(dismiss_rect);
     m_dismiss->open();
 
@@ -1110,17 +1205,18 @@ void DeskUi::open_menu_at_cursor() {
     m_menu_layout = CColumnLayoutBuilder::begin()->gap(6)->size(percent_box(1, 1))->commence();
     m_menu_layout->setMargin(10);
     background->addChild(m_menu_layout);
-    m_menu = CWindowBuilder::begin()
-                 ->type(HT_WINDOW_LAYER)
-                 ->appClass("hyprdesk")
-                 ->appTitle("Desk")
-                 ->preferredSize({static_cast<double>(m_place.menu_w), static_cast<double>(m_place.menu_h)})
-                 ->anchor(kAnchorTopLeft)
-                 ->marginTopLeft({static_cast<double>(m_place.menu_left), static_cast<double>(m_place.menu_top)})
-                 ->exclusiveZone(-1)
-                 ->layer(3)
-                 ->kbInteractive(2)
-                 ->commence();
+    auto menu = CWindowBuilder::begin()
+                    ->type(HT_WINDOW_LAYER)
+                    ->appClass("hyprdesk")
+                    ->appTitle("Desk")
+                    ->preferredSize({static_cast<double>(m_place.menu_w), static_cast<double>(m_place.menu_h)})
+                    ->anchor(kAnchorTopLeft)
+                    ->marginTopLeft({static_cast<double>(m_place.menu_left), static_cast<double>(m_place.menu_top)})
+                    ->exclusiveZone(-1)
+                    ->layer(3)
+                    ->kbInteractive(2);
+    bind_output(menu, m_backend.get(), m_place.monitor_name);
+    m_menu = menu->commence();
     m_menu->m_rootElement->addChild(background);
     m_menu->m_events.keyboardKey.listenStatic([this](Input::SKeyboardKeyEvent event) {
         if (event.down && !event.repeat && event.xkbKeysym == kEscape)
@@ -1150,7 +1246,8 @@ void DeskUi::show_icon_tip(const std::string& text) {
     read_pointer(x, y);
     std::string monitors_json;
     run_capture({hyprctl_bin(), "monitors", "-j"}, monitors_json);
-    const auto place = place_popup(x, y - tip_h - 8, tip_w, tip_h, 0, false, parse_monitors(monitors_json));
+    const auto monitors = parse_monitors(monitors_json);
+    const auto place    = place_popup(x, y - tip_h - 8, tip_w, tip_h, 0, false, monitors, named_monitor(monitors, m_place.monitor_name));
     m_tip_gx         = place.global_x;
     m_tip_gy         = place.global_y;
     m_tip_w          = tip_w;
@@ -1176,17 +1273,18 @@ void DeskUi::show_icon_tip(const std::string& text) {
     });
     auto label = CTextBuilder::begin()->text(std::string{text})->async(false)->align(HT_FONT_ALIGN_CENTER)->size(percent_box(1, 1))->commence();
     background->addChild(label);
-    m_icon_tip = CWindowBuilder::begin()
-                     ->type(HT_WINDOW_LAYER)
-                     ->appClass("hyprdesk-tip")
-                     ->appTitle("Icon")
-                     ->preferredSize({static_cast<double>(tip_w), static_cast<double>(tip_h)})
-                     ->anchor(kAnchorTopLeft)
-                     ->marginTopLeft({static_cast<double>(place.local_x), static_cast<double>(place.local_y)})
-                     ->exclusiveZone(-1)
-                     ->layer(3)
-                     ->kbInteractive(0)
-                     ->commence();
+    auto tip = CWindowBuilder::begin()
+                   ->type(HT_WINDOW_LAYER)
+                   ->appClass("hyprdesk-tip")
+                   ->appTitle("Icon")
+                   ->preferredSize({static_cast<double>(tip_w), static_cast<double>(tip_h)})
+                   ->anchor(kAnchorTopLeft)
+                   ->marginTopLeft({static_cast<double>(place.local_x), static_cast<double>(place.local_y)})
+                   ->exclusiveZone(-1)
+                   ->layer(3)
+                   ->kbInteractive(0);
+    bind_output(tip, m_backend.get(), m_place.monitor_name);
+    m_icon_tip = tip->commence();
     m_icon_tip->m_rootElement->addChild(background);
     m_icon_tip->open();
 }
@@ -1280,13 +1378,13 @@ void DeskUi::open_tray_menu(const TrayIcon& icon) {
 }
 
 void DeskUi::open_tray_layer(const std::vector<TrayMenuItem>& items, size_t level, int item_id, int prefer_x, int prefer_y, int parent_left, bool beside) {
-    const int row_h  = 28;
-    const int width  = 240;
-    const int shown  = static_cast<int>(std::min<size_t>(items.size(), 14));
-    const int height = 16 + std::max(1, shown) * row_h;
+    const int   row_h  = 28;
+    const int   width  = 240;
+    const int   height = tray_popup_height(items);
     std::string monitors_json;
     run_capture({hyprctl_bin(), "monitors", "-j"}, monitors_json);
-    const auto place = place_popup(prefer_x, prefer_y, width, height, parent_left, beside, parse_monitors(monitors_json));
+    const auto monitors = parse_monitors(monitors_json);
+    const auto place    = place_popup(prefer_x, prefer_y, width, height, parent_left, beside, monitors, named_monitor(monitors, m_place.monitor_name));
 
     auto background = CRectangleBuilder::begin()
                           ->color([this] { return m_palette->m_colors.background; })
@@ -1347,17 +1445,18 @@ void DeskUi::open_tray_layer(const std::vector<TrayMenuItem>& items, size_t leve
     layer.width   = width;
     layer.height  = height;
     layer.item_id = item_id;
-    layer.window  = CWindowBuilder::begin()
-                       ->type(HT_WINDOW_LAYER)
-                       ->appClass("hyprdesk-menu")
-                       ->appTitle("Tray menu")
-                       ->preferredSize({static_cast<double>(width), static_cast<double>(height)})
-                       ->anchor(kAnchorTopLeft)
-                       ->marginTopLeft({static_cast<double>(place.local_x), static_cast<double>(place.local_y)})
-                       ->exclusiveZone(-1)
-                       ->layer(3)
-                       ->kbInteractive(0)
-                       ->commence();
+    auto window   = CWindowBuilder::begin()
+                      ->type(HT_WINDOW_LAYER)
+                      ->appClass("hyprdesk-menu")
+                      ->appTitle("Tray menu")
+                      ->preferredSize({static_cast<double>(width), static_cast<double>(height)})
+                      ->anchor(kAnchorTopLeft)
+                      ->marginTopLeft({static_cast<double>(place.local_x), static_cast<double>(place.local_y)})
+                      ->exclusiveZone(-1)
+                      ->layer(3)
+                      ->kbInteractive(0);
+    bind_output(window, m_backend.get(), m_place.monitor_name);
+    layer.window = window->commence();
     layer.window->m_rootElement->addChild(background);
     layer.window->open();
     if (m_tray_layers.size() > level) {
@@ -1373,8 +1472,7 @@ void DeskUi::open_tray_layer(const std::vector<TrayMenuItem>& items, size_t leve
 void DeskUi::tick_clock() {
     if (!m_menu_open)
         return;
-    m_stats = read_stats(m_cpu);
-    m_cpu   = read_cpu_sample();
+    m_stats = cached_stats();
     if (m_clock)
         m_clock->setText(m_stats.clock);
     if (m_date)
@@ -1393,6 +1491,8 @@ void DeskUi::tick_clock() {
 void DeskUi::run() {
     m_backend->enterLoop();
     m_stop.store(true);
+    if (m_stats_thread.joinable())
+        m_stats_thread.join();
     if (m_volume_thread.joinable())
         m_volume_thread.join();
 }

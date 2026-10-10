@@ -73,8 +73,11 @@ int name_owner_changed(sd_bus_message* message, void* userdata, sd_bus_error*) {
         return 0;
     if (new_owner && *new_owner)
         return 0;
-    if (name)
-        static_cast<StatusTray*>(userdata)->drop_service(name);
+    auto* tray = static_cast<StatusTray*>(userdata);
+    if (name && *name)
+        tray->drop_service(name);
+    if (old_owner && *old_owner)
+        tray->drop_service(old_owner);
     return 0;
 }
 
@@ -152,6 +155,21 @@ uint64_t StatusTray::generation() const {
 
 const std::vector<TrayIcon>& StatusTray::items() const {
     return m_items;
+}
+
+int tray_popup_height(const std::vector<TrayMenuItem>& items) {
+    constexpr int margin = 6;
+    constexpr int gap    = 2;
+    constexpr int row    = 28;
+    if (items.empty())
+        return margin * 2 + row;
+    int body = 0;
+    for (size_t index = 0; index < items.size(); ++index) {
+        if (index > 0)
+            body += gap;
+        body += items[index].separator ? 1 : row;
+    }
+    return margin * 2 + body;
 }
 
 std::vector<uint8_t> argb_to_png(int width, int height, const uint8_t* pixels, size_t size) {
@@ -445,16 +463,53 @@ void StatusTray::activate_menu_item(const TrayIcon& icon, int id) {
     sd_bus_error_free(&error);
 }
 
+namespace {
+
+std::string bus_name_owner(sd_bus* bus, const std::string& name) {
+    if (name.empty())
+        return {};
+    if (name.front() == ':')
+        return name;
+    if (!bus)
+        return {};
+    sd_bus_error    error = SD_BUS_ERROR_NULL;
+    sd_bus_message* reply = nullptr;
+    const int       rc    = sd_bus_call_method(bus, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetNameOwner", &error, &reply, "s",
+                                               name.c_str());
+    std::string     owner;
+    if (rc >= 0 && reply) {
+        const char* text = nullptr;
+        if (sd_bus_message_read(reply, "s", &text) >= 0 && text)
+            owner = text;
+    }
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(reply);
+    return owner;
+}
+
+bool same_sni(const TrayIcon& icon, const std::string& service, const std::string& unique, const std::string& path) {
+    if (icon.path != path)
+        return false;
+    if (icon.service == service || (!unique.empty() && (icon.unique == unique || icon.service == unique)))
+        return true;
+    return !icon.unique.empty() && icon.unique == service;
+}
+
+} // namespace
+
 void StatusTray::register_item(const std::string& argument, const std::string& sender) {
     auto target = resolve_sni_target(argument, sender);
     if (target.service.empty() || target.path.empty())
         return;
+    const std::string unique = bus_name_owner(m_bus ? m_bus->bus : nullptr, target.service);
+    const std::string owner  = !unique.empty() ? unique : (sender.size() > 1 && sender.front() == ':' ? sender : std::string{});
     for (const auto& icon : m_items) {
-        if (icon.service == target.service && icon.path == target.path)
+        if (same_sni(icon, target.service, owner, target.path))
             return;
     }
     TrayIcon icon;
     icon.service = target.service;
+    icon.unique  = owner;
     icon.path    = target.path;
     read_item(icon);
     m_items.push_back(icon);
@@ -465,7 +520,7 @@ void StatusTray::register_item(const std::string& argument, const std::string& s
 
 void StatusTray::reload_icon(const std::string& service, const std::string& path) {
     for (auto& icon : m_items) {
-        if (icon.service == service && icon.path == path) {
+        if (icon.path == path && (icon.service == service || (!icon.unique.empty() && icon.unique == service))) {
             read_item(icon);
             return;
         }
@@ -473,12 +528,15 @@ void StatusTray::reload_icon(const std::string& service, const std::string& path
 }
 
 void StatusTray::drop_service(const std::string& service) {
+    if (service.empty())
+        return;
     const auto before = m_items.size();
-    std::erase_if(m_items, [&](const TrayIcon& icon) { return icon.service == service; });
-    if (m_items.size() != before)
+    std::erase_if(m_items, [&](const TrayIcon& icon) { return icon.service == service || icon.unique == service; });
+    if (m_items.size() != before) {
         ++m_generation;
-    if (m_bus)
-        sd_bus_emit_signal(m_bus->bus, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher", "StatusNotifierItemUnregistered", "s", service.c_str());
+        if (m_bus)
+            sd_bus_emit_signal(m_bus->bus, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher", "StatusNotifierItemUnregistered", "s", service.c_str());
+    }
 }
 
 void StatusTray::refresh() {

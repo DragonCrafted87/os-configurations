@@ -17,6 +17,7 @@ struct TrayMenuItem {
 
 struct TrayIcon {
     std::string service;
+    std::string unique;
     std::string path;
     std::string id;
     std::string title;
@@ -29,6 +30,7 @@ struct TrayIcon {
 
 // Network-order ARGB (A, R, G, B) to a PNG. Empty when the size is unusable.
 std::vector<uint8_t> argb_to_png(int width, int height, const uint8_t* pixels, size_t size);
+int                  tray_popup_height(const std::vector<TrayMenuItem>& items);
 
 class StatusTray {
   public:
