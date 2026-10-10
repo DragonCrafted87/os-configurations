@@ -6,8 +6,9 @@
 #   * kernel VT blanking (consoleblank=900, live + GRUB)
 #   * every getty@ via a systemd drop-in (setterm)
 #   * Ly inactivity_cmd / inactivity_delay (config.ini or config.lua)
-#     via a helper that writes DRM DPMS Off. Ly 1.1.0's default
-#     inactivity_delay is 0 (never) and setterm alone does not blank DP.
+#   * ly-idle-blank, because Ly 1.1.0 has no inactivity_cmd and keeps
+#     redrawing the greeter. The helper powers the backlight down.
+#     amdgpu rejects writes to the drm dpms node.
 #   * Ly greeter colors / TTY palette (Kitty Tango Dark)
 
 set -euo pipefail
@@ -24,6 +25,10 @@ LY_BLANK_DEST="/usr/local/sbin/ly-blank-displays"
 LY_BLANK_SRC="${SETUP_FILES_DIR}/ly-blank-displays.sh"
 LY_PALETTE_DEST="/usr/local/sbin/ly-set-palette"
 LY_PALETTE_SRC="${SETUP_FILES_DIR}/ly-set-palette.sh"
+LY_IDLE_DEST="/usr/local/sbin/ly-idle-blank"
+LY_IDLE_SRC="${SETUP_FILES_DIR}/ly-idle-blank.py"
+LY_IDLE_UNIT_DEST="/etc/systemd/system/ly-idle-blank.service"
+LY_IDLE_UNIT_SRC="${SETUP_FILES_DIR}/ly-idle-blank.service"
 
 ensure_grub_cmdline_arg() {
     local arg="$1"
@@ -191,4 +196,32 @@ elif [[ -f /etc/ly/config.lua ]]; then
     set_ly_lua_key /etc/ly/config.lua term_reset_cmd "\"/usr/bin/tput reset; ${LY_PALETTE_DEST}\""
 else
     log "Ly config not present; console blanking only"
+fi
+
+# The watcher reads inactivity_delay, so the unit starts after that write.
+idle_changed=0
+if [[ ! -f "$LY_IDLE_DEST" ]] || ! cmp -s "$LY_IDLE_SRC" "$LY_IDLE_DEST"; then
+    idle_changed=1
+fi
+if [[ ! -f "$LY_IDLE_UNIT_DEST" ]] || ! cmp -s "$LY_IDLE_UNIT_SRC" "$LY_IDLE_UNIT_DEST"; then
+    idle_changed=1
+fi
+install_ly_helper "$LY_IDLE_SRC" "$LY_IDLE_DEST"
+if [[ ! -f "$LY_IDLE_UNIT_DEST" ]] || ! cmp -s "$LY_IDLE_UNIT_SRC" "$LY_IDLE_UNIT_DEST"; then
+    log "install ${LY_IDLE_UNIT_DEST}"
+    if [[ "${DOTFILES_DRY_RUN:-0}" != "1" ]]; then
+        sudo install -m 0644 "$LY_IDLE_UNIT_SRC" "$LY_IDLE_UNIT_DEST"
+    fi
+fi
+if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+    log "enable ly-idle-blank.service"
+elif [[ "$idle_changed" -eq 1 ]]; then
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now ly-idle-blank.service
+    sudo systemctl restart ly-idle-blank.service
+elif ! systemctl is-active --quiet ly-idle-blank.service; then
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now ly-idle-blank.service
+else
+    enable_service ly-idle-blank.service
 fi
