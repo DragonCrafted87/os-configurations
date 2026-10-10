@@ -1,0 +1,13 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=95
+STOP=10
+
+start_service() {
+    procd_open_instance
+    procd_set_param command /usr/bin/host-status.sh
+    procd_set_param env HOST_STATUS_BROKER=192.168.8.21 HOST_STATUS_ROOT=/
+    procd_set_param respawn
+    procd_close_instance
+}
