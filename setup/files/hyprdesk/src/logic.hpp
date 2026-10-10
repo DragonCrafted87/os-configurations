@@ -36,6 +36,30 @@ struct Placement {
 
 int                      menu_width_for(int monitor_w);
 void                     fit_menu_width(Placement& place, int content_w);
+
+// Search row, ten category rows, and the gaps between them.
+constexpr int kMenuSearchRow     = 32;
+constexpr int kMenuCategoryRow   = 30;
+constexpr int kMenuCategoryCount = 10;
+constexpr int kMenuCategoryGap   = 6;
+constexpr int kMenuCategoryBlock = kMenuSearchRow + (kMenuCategoryCount * kMenuCategoryRow) + (kMenuCategoryCount * kMenuCategoryGap);
+
+constexpr int kMenuWindowRow   = 42;
+constexpr int kMenuWindowGap   = 2;
+constexpr int kMenuWindowCap   = 6;
+constexpr int kMenuWindowEmpty = 24;
+
+// Column margin, the gaps between the fourteen menu rows, five rules,
+// and the header, tray, volume, status, clock, date, and power rows.
+constexpr int kMenuChrome = (10 * 2) + (13 * 6) + (5 * 2) + 28 + 28 + 28 + 22 + 36 + 36 + 40;
+
+struct MenuBands {
+    int top     = 1;
+    int windows = 1;
+};
+
+int       menu_height_for(int window_rows);
+MenuBands menu_bands(int menu_h, int window_count);
 const char*              hyprctl_bin();
 bool                     parse_cursor_pos(const std::string& line, int& x, int& y);
 std::vector<Monitor>     parse_monitors(const std::string& json);

@@ -33,6 +33,10 @@ That toggle opens or closes this menu. The menu layer namespace is
 
 1. The categories SHALL be All, Accessories, Development, Games,
    Graphics, Internet, Multimedia, Office, Settings, and System.
+1. The search field and those category buttons SHALL stay fully
+   visible, without scrolling, when the menu has room for them and the
+   rows below them. The window list SHALL shrink and scroll before
+   that block does.
 1. Hovering a category SHALL open its flyout without a click. Hover
    SHALL NOT change a pinned category.
 1. The pointer entering the windows, tray, volume, status, or power

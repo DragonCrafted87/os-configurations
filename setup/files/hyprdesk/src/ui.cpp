@@ -90,16 +90,6 @@ float status_fields_width(const StatsText& stats, const std::string& family, flo
     return width > gap ? width - gap : width;
 }
 
-// The column drops later children that do not fit. Shrink the window list
-// so the tray, volume, status, clock, date, and power rows stay on screen.
-float window_list_height(int menu_h, size_t count) {
-    const float natural = count == 0 ? 28.F : std::min<float>(static_cast<float>(count), 6.F) * 44.F;
-    constexpr int reserved = 478;
-    const int     room     = menu_h - reserved;
-    const float   cap      = static_cast<float>(std::max(28, room));
-    return std::min(natural, cap);
-}
-
 CSharedPointer<CImageElement> image_for_name(IBackend* backend, const std::string& name, const std::string& theme_path, float side, bool sync_load) {
     auto sized = [&](CSharedPointer<CImageBuilder> builder) {
         return builder->fitMode(IMAGE_FIT_MODE_CONTAIN)->sync(sync_load)->size(box_size(side, side))->commence();
@@ -798,7 +788,7 @@ void DeskUi::rebuild_menu() {
     m_volume_readout.reset();
     m_mute_button.reset();
     m_menu_layout->clearChildren();
-    auto upper = CColumnLayoutBuilder::begin()->gap(6)->size(fill_auto())->commence();
+    auto upper = CColumnLayoutBuilder::begin()->gap(kMenuCategoryGap)->size(fill_auto())->commence();
     auto rule  = [this] {
         return CRectangleBuilder::begin()
             ->color([this] {
@@ -825,7 +815,7 @@ void DeskUi::rebuild_menu() {
                            }
                            rebuild_flyout();
                        })
-                       ->size(bar_size(1, 32))
+                       ->size(bar_size(1, kMenuSearchRow))
                        ->commence();
     upper->addChild(m_search_box);
 
@@ -836,12 +826,13 @@ void DeskUi::rebuild_menu() {
         {"All", "*"},       {"Accessories", "Utility"}, {"Development", "Development"}, {"Games", "Game"},     {"Graphics", "Graphics"},
         {"Internet", "Network"}, {"Multimedia", "AudioVideo"}, {"Office", "Office"}, {"Settings", "Settings"}, {"System", "System"},
     };
+    static_assert(sizeof(categories) / sizeof(categories[0]) == static_cast<size_t>(kMenuCategoryCount));
     for (const auto& category : categories) {
         auto button = CButtonBuilder::begin()
                           ->label(std::string{category.label})
                           ->noBorder(true)
                           ->fontSize({CFontSize::HT_FONT_TEXT, 1.F})
-                          ->size(bar_size(1, 30))
+                          ->size(bar_size(1, kMenuCategoryRow))
                           ->onMainClick([this, category](CSharedPointer<CButtonElement>) {
                               if (m_pinned && m_category == category.cat) {
                                   m_pinned = false;
@@ -872,7 +863,8 @@ void DeskUi::rebuild_menu() {
         upper->addChild(button);
     }
 
-    auto scroller = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, 1))->commence();
+    const auto bands    = menu_bands(m_place.menu_h, static_cast<int>(windows.size()));
+    auto       scroller = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, bands.top))->commence();
     scroller->setGrow(false, true);
     scroller->addChild(upper);
     m_menu_layout->addChild(scroller);
@@ -918,18 +910,17 @@ void DeskUi::rebuild_menu() {
     header->addChild(refresh_button);
     m_menu_layout->addChild(header);
 
-    const float window_h = window_list_height(m_place.menu_h, windows.size());
-    auto window_scroll = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, window_h))->commence();
+    auto window_scroll = CScrollAreaBuilder::begin()->scrollY(true)->size(bar_size(1, bands.windows))->commence();
     window_scroll->setReceivesMouse(true);
     window_scroll->setMouseEnter(below_categories);
-    auto window_list   = CColumnLayoutBuilder::begin()->gap(2)->size(fill_auto())->commence();
+    auto window_list   = CColumnLayoutBuilder::begin()->gap(kMenuWindowGap)->size(fill_auto())->commence();
     if (windows.empty()) {
-        window_list->addChild(CTextBuilder::begin()->text(m_minimized ? std::string{"No minimized windows"} : std::string{"No windows"})->async(false)->size(bar_size(1, 24))->commence());
+        window_list->addChild(CTextBuilder::begin()->text(m_minimized ? std::string{"No minimized windows"} : std::string{"No windows"})->async(false)->size(bar_size(1, kMenuWindowEmpty))->commence());
     }
     for (const auto& client : windows) {
         const auto title = client.title.empty() ? std::string{"(no title)"} : client.title;
         const auto meta  = window_meta(client);
-        auto row = CRectangleBuilder::begin()->color([] { return CHyprColor{0, 0, 0, 0}; })->rounding(m_palette->m_vars.smallRounding)->size(bar_size(1, 42))->commence();
+        auto row = CRectangleBuilder::begin()->color([] { return CHyprColor{0, 0, 0, 0}; })->rounding(m_palette->m_vars.smallRounding)->size(bar_size(1, kMenuWindowRow))->commence();
         row->setReceivesMouse(true);
         row->setMouseEnter(below_categories);
         row->setMouseButton([this, client](Input::eMouseButton button, bool down) {
@@ -1158,8 +1149,7 @@ void DeskUi::open_menu_at_cursor() {
     int y = 8;
     if (!cursor.empty())
         parse_cursor_pos(cursor, x, y);
-    const int estimate = 20 + 36 + (10 * 30) + (9 * 6) + 22 + (6 * 34) + 28 + 32 + 22 + 36 + 32 + 40 + (14 * 6);
-    m_place = place_menu(x, y, parse_monitors(monitors_json), estimate);
+    m_place = place_menu(x, y, parse_monitors(monitors_json), menu_height_for(kMenuWindowCap));
     m_stats = cached_stats();
     m_tray.announce();
     const float status_w = status_fields_width(m_stats, m_palette->m_vars.fontFamily, static_cast<float>(m_palette->m_vars.fontSize)) + 36.F;

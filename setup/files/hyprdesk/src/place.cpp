@@ -216,6 +216,35 @@ Placement place_menu(int cursor_x, int cursor_y, const std::vector<Monitor>& mon
     return place;
 }
 
+int window_block_height(int count) {
+    if (count <= 0)
+        return kMenuWindowEmpty;
+    const int rows = std::min(count, kMenuWindowCap);
+    return (rows * kMenuWindowRow) + ((rows - 1) * kMenuWindowGap);
+}
+
+int menu_height_for(int window_rows) {
+    return kMenuChrome + kMenuCategoryBlock + window_block_height(window_rows);
+}
+
+MenuBands menu_bands(int menu_h, int window_count) {
+    const int budget  = std::max(1, menu_h - kMenuChrome);
+    const int top_nat = kMenuCategoryBlock;
+    const int win_nat = window_block_height(window_count);
+    MenuBands bands;
+    if (budget >= top_nat) {
+        bands.top     = top_nat;
+        bands.windows = std::min(win_nat, budget - top_nat);
+        return bands;
+    }
+    constexpr int win_floor = 28;
+    bands.windows           = std::min(win_nat, win_floor);
+    if (bands.windows >= budget)
+        bands.windows = std::max(0, budget - 1);
+    bands.top = std::max(1, budget - bands.windows);
+    return bands;
+}
+
 void fit_menu_width(Placement& place, int content_w) {
     if (content_w > place.menu_w)
         place.menu_w = std::min(place.monitor_w - 16, content_w);
