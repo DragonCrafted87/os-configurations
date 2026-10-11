@@ -54,3 +54,28 @@ That writes the image onto the internal WD SN550 (`WDS500G3X0C`). It
 refuses the Ventoy stick, a disk that holds the running system, and any
 other model. First boot is the Home Assistant onboarding screen. Set
 the hostname to ward-drake. The 2021 config stays on castellan.
+
+## Reflash mist-dragon
+
+Script: `setup/ventoy/mist-dragon/reflash.sh`
+
+The steps are in `setup/ventoy/mist-dragon/RECOVERY.md`. Copy the
+`setup/ventoy/mist-dragon/` folder onto the Ventoy stick. Put the
+OpenWrt combined-efi images in `raw-disc-images/`. The config backup
+and `owut-list.txt` go in `scripts/mist-dragon/backup/` on the stick.
+The script does not need the rest of this repo.
+
+Boot the OpenMandriva live image on the GEEK+ G34. The desktop mounts
+the stick at `/media/live/Ventoy`, and that mount is often `noexec`.
+Open a root shell and run bash on the script:
+
+```bash
+sudo su
+bash /media/live/Ventoy/scripts/mist-dragon/reflash.sh
+```
+
+That writes one image onto the internal KINGSTON OM8P0S3. It refuses
+the Ventoy stick, a disk that holds the running system, and any other
+model. A fresh image answers at 192.168.1.1 with no root password.
+`link-bench static` on runewyrm reaches it. Restore the backup with
+`sysupgrade -r`, then `link-bench lan`.
