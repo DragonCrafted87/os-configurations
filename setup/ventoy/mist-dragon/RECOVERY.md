@@ -84,6 +84,14 @@ The script copies the newest file in
 `scripts/mist-dragon/backup/` to `/root/mist-dragon-backup.tar.gz` on
 the new root. Read `/root/RECOVERY.txt` on the router.
 
+Two tars are in that directory. The newest,
+`mist-dragon-25.12.5.tar.gz`, was taken after the 25.12.5 boot and
+includes `/etc/init.d/vpn-relay`. The older
+`mist-dragon-24.10.8-pre-25.12.tar.gz` does not. A loose copy of
+that init script is `scripts/mist-dragon/vpn-relay`. If a restore
+leaves `/etc/init.d/vpn-relay` missing, copy that file there,
+`chmod 755` it, and run `/etc/init.d/vpn-relay enable`.
+
 On the owut image, restore now:
 
 ```sh
@@ -102,8 +110,11 @@ sysupgrade -r /root/mist-dragon-backup.tar.gz
 
 The stick copy of that list is
 `scripts/mist-dragon/backup/owut-list.txt`. Copy it to `/root/`
-before the `opkg install` if it is not already there. 25.12 uses
-`apk` instead of `opkg`. The same names are the ones to add.
+before the install if it is not already there. 25.12 uses `apk`
+instead of `opkg`. The list was taken on 24.10. On a stock 25.12
+image, skip `acme`, `luci-app-acme`, and `kmod-ovpn-dco-v2`, and
+add `kmod-ovpn-backports`. The owut image already has that set, so
+it only needs `sysupgrade -r`.
 
 After the restore reboot, the LAN is `192.168.0.1/16` again. On
 runewyrm:
