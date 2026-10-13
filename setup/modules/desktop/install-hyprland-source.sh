@@ -446,6 +446,59 @@ patch_hyprland_hyprpm_pkgconfig() {
     sed -i -E 's/tomlplusplus hyprutils>=0\.7\.0/hyprutils>=0.7.0 tomlplusplus/' "$f"
 }
 
+# await() waited only on a condition variable created after enqueue. A
+# resource that finished first never signaled it, and the UI thread blocked
+# inside text render. Publish readiness under the same mutex the waiter holds.
+patch_hyprgraphics_await() {
+    local f="$1/src/resource/AsyncResourceGatherer.cpp"
+    [[ -f "$f" ]] || return 0
+    grep -q 'awaitingEvent || resource->m_ready.load()' "$f" && return 0
+    grep -q 'return resource->m_impl->awaitingEvent;' "$f" || return 0
+    log "patch ${f} so await cannot miss a finished resource"
+    [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]] && return 0
+    python3 - "$f" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old_await = """void CAsyncResourceGatherer::await(Hyprutils::Memory::CAtomicSharedPointer<IAsyncResource> resource) {
+    resource->m_impl->awaitingCv = Hyprutils::Memory::makeUnique<std::condition_variable>();
+    std::unique_lock<std::mutex> lk(resource->m_impl->awaitingMtx);
+    resource->m_impl->awaitingCv->wait(lk, [&resource] { return resource->m_impl->awaitingEvent; });
+    resource->m_impl->awaitingCv.reset();
+}"""
+new_await = """void CAsyncResourceGatherer::await(Hyprutils::Memory::CAtomicSharedPointer<IAsyncResource> resource) {
+    // The worker publishes m_ready under awaitingMtx. Waiting only for a
+    // condition variable created after enqueue misses a resource that
+    // already finished, and the caller blocks for good.
+    std::unique_lock<std::mutex> lk(resource->m_impl->awaitingMtx);
+    if (resource->m_ready)
+        return;
+    resource->m_impl->awaitingCv = Hyprutils::Memory::makeUnique<std::condition_variable>();
+    resource->m_impl->awaitingCv->wait(lk, [&resource] { return resource->m_impl->awaitingEvent || resource->m_ready.load(); });
+    resource->m_impl->awaitingCv.reset();
+}"""
+old_worker = """            if (r->m_impl->awaitingCv) {
+                r->m_impl->awaitingEvent = true;
+                r->m_impl->awaitingCv->notify_all();
+            }
+            r->m_ready = true;
+            r->m_events.finished.emit();"""
+new_worker = """            {
+                std::lock_guard<std::mutex> lg(r->m_impl->awaitingMtx);
+                r->m_impl->awaitingEvent = true;
+                r->m_ready               = true;
+                if (r->m_impl->awaitingCv)
+                    r->m_impl->awaitingCv->notify_all();
+            }
+            r->m_events.finished.emit();"""
+if old_await not in text or old_worker not in text:
+    raise SystemExit(f"hyprgraphics await patch did not match {path}")
+path.write_text(text.replace(old_await, new_await, 1).replace(old_worker, new_worker, 1), encoding="utf-8")
+PY
+}
+
 # OpenMandriva pci.h has no extern "C", so C++ TUs mangle pci_alloc.
 patch_pci_extern_c() {
     local root="$1" f
@@ -803,6 +856,7 @@ build_cmake_src() {
     rewrite_append_range_tree "$src"
     rewrite_embed_tree "$src"
     patch_libstdcxx_format "$src"
+    patch_hyprgraphics_await "$src"
     patch_pci_extern_c "$src"
     pin_systemd_user_unit_dir "$src"
     rm -rf "${src}/build"
