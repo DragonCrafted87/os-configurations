@@ -160,12 +160,12 @@ Edit `roles.conf` to change the module lists. `[common]` runs for
 `workstation`, `htpc`, and `server`. `[haos]` does not run `[common]`.
 `laptop` is `[subrole.laptop]` on top of `workstation`.
 
-| Role          | Extra modules                                                                                         |
-| ------------- | ----------------------------------------------------------------------------------------------------- |
-| `workstation` | Hyprland, desktop apps, Brave, VS Code, LibreOffice, CUPS, Steam, MakeMKV, KDE Connect, BOINC Manager |
-| `htpc`        | Hyprland, desktop apps, Brave, k3s, BOINC client. Couch build-out: `../../docs/htpc-role.md`          |
-| `server`      | CLI baseline, k3s, BOINC client; no GUI session                                                       |
-| `haos`        | SSH keys and the short hostname on a Home Assistant OS appliance                                      |
+| Role          | Extra modules                                                                                                   |
+| ------------- | --------------------------------------------------------------------------------------------------------------- |
+| `workstation` | Hyprland, desktop apps, Brave, Grok Bot, VS Code, LibreOffice, CUPS, Steam, MakeMKV, KDE Connect, BOINC Manager |
+| `htpc`        | Hyprland, desktop apps, Brave, k3s, BOINC client. Couch build-out: `../../docs/htpc-role.md`                    |
+| `server`      | CLI baseline, k3s, BOINC client; no GUI session                                                                 |
+| `haos`        | SSH keys and the short hostname on a Home Assistant OS appliance                                                |
 
 `enable-subrole laptop` adds `configure-laptop` (power-profiles-daemon).
 
@@ -188,6 +188,21 @@ missing ones are filled in, and handlers that name a removed desktop
 file are replaced. The other half is `config/hypr/lua/env.lua`
 (`XDG_CURRENT_DESKTOP=Hyprland:KDE`) so KIO treats LibreOffice and Okular
 as valid "Open with" targets.
+
+`configure-secret-portal` runs on workstation and htpc. It symlinks
+`~/.config/xdg-desktop-portal/hyprland-portals.conf` at the shipped file,
+which keeps `default=hyprland;gtk` and selects gnome-keyring for the
+Secret portal. The KDE half of that desktop name makes the portal's
+UseIn fallback pick `kwallet.portal`. Nothing on this session provides
+that name, so Chromium cannot store an encryption key.
+
+`install-grok-bot` runs on workstation, after MIME defaults. It copies
+the pinned AppImage to `~/.local/share/grok-bot/Grok_Bot.AppImage` when
+the hash differs, including from `~/downloads` when that file already
+matches. `~/.local/bin/grok-bot` execs it with
+`--password-store=gnome-libsecret`. `grok-bot --help` prints usage and
+does not start the AppImage. The desktop file handles
+`x-scheme-handler/grokbot` and `x-scheme-handler/sand`.
 
 The chosen role is written to `~/.config/dot-files/role`. An `haos`
 run leaves that file alone.

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Grok Bot's AppImage does not print usage. A bare launch on this session
+# selects KWallet because XDG_CURRENT_DESKTOP contains KDE, and the login
+# is not stored. gnome-libsecret uses the login keyring ly unlocks.
+set -euo pipefail
+
+data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
+appimage="${data_home}/grok-bot/Grok_Bot.AppImage"
+
+usage() {
+    cat <<EOF
+Usage: grok-bot [--help]
+       grok-bot [arguments passed to Grok Bot]
+
+Starts Grok Bot. The AppImage does not print usage.
+The login is stored in the gnome-keyring login keyring.
+EOF
+}
+
+case "${1:-}" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+esac
+
+if [[ ! -x "$appimage" ]]; then
+    printf 'grok-bot: missing %s\n' "$appimage" >&2
+    exit 127
+fi
+
+exec "$appimage" --password-store=gnome-libsecret "$@"
