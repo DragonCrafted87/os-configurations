@@ -22,6 +22,77 @@ set -euo pipefail
 
 require_user
 
+# KWallet exports org.freedesktop.secrets when apiEnabled is true, and
+# that is the default when kwalletrc has no such key. Brave's cookie
+# key is the login item "Brave Safe Storage". Leave the wallet enabled
+# for KDE apps and keep it off that bus name.
+disable_kwallet_secret_service() {
+    local file="${CONFIG_TARGET_DIR}/kwalletrc"
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        log "dry-run: ${file} [org.freedesktop.secrets] apiEnabled=false"
+        return 0
+    fi
+    python3 - "$file" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+section = "org.freedesktop.secrets"
+key = "apiEnabled"
+value = "false"
+text = path.read_text() if path.exists() else ""
+lines = text.splitlines()
+header = f"[{section}]"
+out = []
+in_section = False
+seen_section = False
+written = False
+
+
+def key_name(stripped):
+    if not stripped or stripped.startswith("#") or stripped.startswith(";"):
+        return None
+    if "=" not in stripped:
+        return None
+    return stripped.split("=", 1)[0].strip()
+
+
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        if in_section and not written:
+            out.append(f"{key}={value}")
+            written = True
+        in_section = stripped == header
+        if in_section:
+            seen_section = True
+        out.append(line)
+        continue
+    if in_section and key_name(stripped) == key:
+        out.append(f"{key}={value}")
+        written = True
+        continue
+    out.append(line)
+if seen_section:
+    if not written:
+        out.append(f"{key}={value}")
+else:
+    if out and out[-1] != "":
+        out.append("")
+    out.append(header)
+    out.append(f"{key}={value}")
+path.parent.mkdir(parents=True, exist_ok=True)
+new = "\n".join(out) + "\n"
+if new != text:
+    path.write_text(new)
+PY
+}
+
+# Tests source this file and call the function. A role run executes it.
+if [[ "${DOTFILES_TEST_SOURCE:-0}" == "1" ]]; then
+    return 0
+fi
+
 ensure_packages gnome-keyring libsecret seahorse
 
 fix_ly_pam() {
@@ -153,6 +224,7 @@ hide_xdg_autostart
 keyrings="${DOTFILES_HOME}/.local/share/keyrings"
 ensure_dir "$keyrings"
 ensure_file_contents "${keyrings}/default" "login"
+disable_kwallet_secret_service
 if [[ "${DOTFILES_DRY_RUN:-0}" != "1" && ! -e "${keyrings}/login.keyring" ]]; then
     log "no login.keyring yet; create one named login in Seahorse with the account password"
     if compgen -G "${keyrings}/*.keyring" >/dev/null; then

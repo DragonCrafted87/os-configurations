@@ -196,6 +196,14 @@ Secret portal. The KDE half of that desktop name makes the portal's
 UseIn fallback pick `kwallet.portal`. Nothing on this session provides
 that name, so Chromium cannot store an encryption key.
 
+`configure-brave-keyring` runs on those same roles. It writes
+`~/.config/kwalletrc` so `[org.freedesktop.secrets] apiEnabled` is
+`false`, and it leaves every other line in that file alone. KWallet
+stays available to KDE apps. It does not export the Secret Service, so
+the login keyring stays the only provider on that bus. A missing
+`kwalletrc` still gets the key, because KWallet's default for it is
+true.
+
 `install-grok-bot` runs on workstation, after MIME defaults. It copies
 the pinned AppImage to `~/.local/share/grok-bot/Grok_Bot.AppImage` when
 the hash differs, including from `~/downloads` when that file already
