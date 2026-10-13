@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Pinned Grok Bot AppImage, desktop file, and launcher.
-# configure-secret-portal selects the keyring. This launcher tells
-# Chromium to use it, because a bare AppImage still probes KWallet.
+# Pinned Grok Bot AppImage, extracted payload, desktop file, and launcher.
+# The AppImage rewrites the desktop file and drops the keyring flag.
+# The launcher starts the extracted binary instead.
 
 set -euo pipefail
 # shellcheck disable=SC1091
@@ -57,6 +57,43 @@ install_grok_appimage() {
     fi
     install -m 0755 "$tmp" "$dest"
     rm -f "$tmp"
+}
+
+install_grok_payload() {
+    local share dest payload stamp tmp
+    share="${DOTFILES_HOME}/.local/share/grok-bot"
+    dest="${share}/Grok_Bot.AppImage"
+    payload="${share}/payload"
+    stamp="${share}/payload.sha256"
+
+    if [[ -x "${payload}/grok-bot" && -f "$stamp" ]] \
+        && [[ "$(tr -d '[:space:]' <"$stamp")" == "$GROK_BOT_SHA256" ]]; then
+        return 0
+    fi
+
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        log "dry-run: extract Grok Bot ${GROK_BOT_VERSION}"
+        return 0
+    fi
+
+    [[ -x "$dest" ]] || die "Grok Bot AppImage is not installed"
+    tmp="$(mktemp -d)"
+    log "extract Grok Bot ${GROK_BOT_VERSION}"
+    if ! (
+        cd "$tmp"
+        "$dest" --appimage-extract >/dev/null
+        ); then
+        rm -rf "$tmp"
+        die "extract of Grok Bot ${GROK_BOT_VERSION} failed"
+    fi
+    if [[ ! -x "${tmp}/squashfs-root/grok-bot" ]]; then
+        rm -rf "$tmp"
+        die "extract of Grok Bot ${GROK_BOT_VERSION} has no grok-bot"
+    fi
+    rm -rf "$payload"
+    mv "${tmp}/squashfs-root" "$payload"
+    rm -rf "$tmp"
+    printf '%s\n' "$GROK_BOT_SHA256" >"$stamp"
 }
 
 install_grok_launcher() {
@@ -167,6 +204,7 @@ PY
 
 install_grok_bot() {
     install_grok_appimage
+    install_grok_payload
     install_grok_launcher
 }
 

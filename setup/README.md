@@ -199,9 +199,12 @@ that name, so Chromium cannot store an encryption key.
 `install-grok-bot` runs on workstation, after MIME defaults. It copies
 the pinned AppImage to `~/.local/share/grok-bot/Grok_Bot.AppImage` when
 the hash differs, including from `~/downloads` when that file already
-matches. `~/.local/bin/grok-bot` execs it with
-`--password-store=gnome-libsecret`. `grok-bot --help` prints usage and
-does not start the AppImage. The desktop file handles
+matches, and extracts that file next to it. `~/.local/bin/grok-bot`
+starts the extracted binary with `--password-store=gnome-libsecret`
+and leaves `APPIMAGE` unset. Launching the AppImage itself rewrites
+the desktop file without that flag, and this session then selects
+KWallet, so the saved login cannot be read. `grok-bot --help` prints
+usage and does not start Grok Bot. The desktop file handles
 `x-scheme-handler/grokbot` and `x-scheme-handler/sand`.
 
 The chosen role is written to `~/.config/dot-files/role`. An `haos`

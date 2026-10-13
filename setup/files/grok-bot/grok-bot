@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Grok Bot's AppImage does not print usage. A bare launch on this session
-# selects KWallet because XDG_CURRENT_DESKTOP contains KDE, and the login
-# is not stored. gnome-libsecret uses the login keyring ly unlocks.
+# The AppImage runtime sets APPIMAGE. Grok Bot then rewrites its desktop
+# file to launch that AppImage with no arguments. This session's desktop
+# name contains KDE, so that launch selects KWallet and cannot read the
+# login stored in gnome-keyring. Start the extracted binary instead, with
+# APPIMAGE unset, so the rewrite does not run.
 set -euo pipefail
 
 data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
-appimage="${data_home}/grok-bot/Grok_Bot.AppImage"
+payload="${data_home}/grok-bot/payload"
+bin="${payload}/grok-bot"
 
 usage() {
     cat <<EOF
@@ -24,9 +27,22 @@ case "${1:-}" in
         ;;
 esac
 
-if [[ ! -x "$appimage" ]]; then
-    printf 'grok-bot: missing %s\n' "$appimage" >&2
+if [[ ! -x "$bin" ]]; then
+    printf 'grok-bot: missing %s\n' "$bin" >&2
     exit 127
 fi
 
-exec "$appimage" --password-store=gnome-libsecret "$@"
+export PATH="${payload}:${payload}/usr/sbin${PATH:+:${PATH}}"
+export XDG_DATA_DIRS="${payload}/usr/share/${XDG_DATA_DIRS:+:${XDG_DATA_DIRS}}:/usr/share/gnome:/usr/local/share/:/usr/share/"
+export LD_LIBRARY_PATH="${payload}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export GSETTINGS_SCHEMA_DIR="${payload}/usr/share/glib-2.0/schemas${GSETTINGS_SCHEMA_DIR:+:${GSETTINGS_SCHEMA_DIR}}"
+unset APPIMAGE APPDIR ARGV0
+
+extra=()
+# Match the AppImage AppRun: without user namespaces the bundled
+# Chromium sandbox cannot start.
+if ! unshare -Ur true >/dev/null 2>&1; then
+    extra+=(--no-sandbox)
+fi
+
+exec "$bin" --password-store=gnome-libsecret "${extra[@]}" "$@"
