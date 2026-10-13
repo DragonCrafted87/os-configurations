@@ -35,6 +35,19 @@ chmod 0755 "${work}/bin/sudo" "${work}/bin/curl"
 fixture="${home}/downloads/Grok_Bot_9.9.9.AppImage"
 cat >"$fixture" <<'EOF'
 #!/bin/sh
+if [ "${1:-}" = "--appimage-extract" ]; then
+    mkdir -p squashfs-root
+    cat >squashfs-root/grok-bot <<'INNER'
+#!/bin/sh
+printf 'via=payload\n' >>"${GROK_LAUNCH_LOG}"
+printf 'APPIMAGE=%s\n' "${APPIMAGE-unset}" >>"${GROK_LAUNCH_LOG}"
+printf '%s\n' "$*" >>"${GROK_LAUNCH_LOG}"
+exit 0
+INNER
+    chmod 0755 squashfs-root/grok-bot
+    exit 0
+fi
+printf 'via=appimage\n' >>"${GROK_LAUNCH_LOG}"
 printf '%s\n' "$*" >>"${GROK_LAUNCH_LOG}"
 exit 0
 EOF
@@ -71,6 +84,7 @@ install_grok_bot
 [[ "$(sha256sum -- "$dest" | awk '{print $1}')" == "$sha" ]] || fail "installed AppImage hash drifted"
 [[ ! -e "${home}/.local/share/grok-bot/appimage" ]] || fail "downloads symlink remains"
 [[ -x "$wrapper" ]] || fail "launcher is not executable"
+[[ -x "${home}/.local/share/grok-bot/payload/grok-bot" ]] || fail "payload was not extracted"
 [[ -f "${home}/.local/share/icons/hicolor/512x512/apps/grok-bot.png" ]] || fail "icon was not installed"
 desk="${home}/.local/share/applications/grok-bot.desktop"
 [[ -f "$desk" ]] || fail "desktop file was not installed"
@@ -86,14 +100,23 @@ grep -qxF "x-scheme-handler/sand=grok-bot.desktop" "$mime" || fail "sand scheme 
 "$wrapper" --help >/dev/null
 [[ ! -e "${work}/launch.log" ]] || fail "--help launched the AppImage"
 "$wrapper" --class probe
-grep -qxF -- "--password-store=gnome-libsecret --class probe" "${work}/launch.log" \
+grep -qxF 'via=payload' "${work}/launch.log" || fail "launcher did not start the payload: $(cat "${work}/launch.log")"
+grep -qxF 'via=appimage' "${work}/launch.log" && fail "launcher started the AppImage"
+grep -qxF 'APPIMAGE=unset' "${work}/launch.log" || fail "APPIMAGE was set: $(cat "${work}/launch.log")"
+if unshare -Ur true >/dev/null 2>&1; then
+    probe_args="--password-store=gnome-libsecret --class probe"
+else
+    probe_args="--password-store=gnome-libsecret --no-sandbox --class probe"
+fi
+grep -qxF -- "$probe_args" "${work}/launch.log" \
     || fail "launcher args: $(cat "${work}/launch.log")"
 
 sleep 1
-before="$(stat -c %Y "$dest" "$wrapper" "$desk" | sha256sum)"
+payload="${home}/.local/share/grok-bot/payload/grok-bot"
+before="$(stat -c %Y "$dest" "$wrapper" "$desk" "$payload" | sha256sum)"
 : >"${work}/launch.log"
 install_grok_bot
-after="$(stat -c %Y "$dest" "$wrapper" "$desk" | sha256sum)"
+after="$(stat -c %Y "$dest" "$wrapper" "$desk" "$payload" | sha256sum)"
 [[ "$before" == "$after" ]] || fail "second run rewrote an installed Grok Bot"
 [[ ! -s "${work}/launch.log" ]] || fail "second run launched Grok Bot"
 
