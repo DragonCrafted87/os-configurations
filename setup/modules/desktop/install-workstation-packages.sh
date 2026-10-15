@@ -30,6 +30,7 @@ ensure_packages \
     cmake \
     meson \
     ninja \
+    rust-ripgrep \
     docker \
     docker-compose \
     kubernetes-client \
