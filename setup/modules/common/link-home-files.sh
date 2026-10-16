@@ -30,6 +30,9 @@ link_home "${SETUP_FILES_DIR}/home/inputrc" "${DOTFILES_HOME}/.inputrc"
 ensure_dir "${DOTFILES_HOME}/.grok"
 link_home "${SETUP_FILES_DIR}/home/grok-AGENTS.md" "${DOTFILES_HOME}/.grok/AGENTS.md"
 
+ensure_dir "${DOTFILES_HOME}/.local/bin"
+link_home "${SETUP_FILES_DIR}/home/grok-tmux" "${DOTFILES_HOME}/.local/bin/grok-tmux"
+
 sshconfig_src="${SETUP_FILES_DIR}/home/ssh-config"
 if [[ -f "$sshconfig_src" ]]; then
     ensure_dir "${DOTFILES_HOME}/.ssh"

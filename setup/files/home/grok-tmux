@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Run Grok CLI inside a named tmux session on its own socket.
+# A watcher bot can read the pane and type into it through this socket only.
+# Usage: grok-tmux [name] [grok args...]
+
+set -euo pipefail
+
+sock="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is not set}/tmux-grok.sock"
+name="grok-${1:-main}"
+if [[ $# -gt 0 ]]; then
+    shift
+fi
+log_dir="${XDG_STATE_HOME:-${HOME}/.local/state}/grok-tmux"
+
+for arg in "$@"; do
+    case "$arg" in
+        --always-approve | --yolo)
+            printf 'grok-tmux: refusing %s\n' "$arg" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if ! tmux -S "$sock" has-session -t "=${name}" 2>/dev/null; then
+    mkdir -p "$log_dir"
+    chmod 700 "$log_dir"
+    log="${log_dir}/${name}-$(date +%F_%H%M%S).log"
+    cmd="grok"
+    for arg in "$@"; do
+        cmd+=" $(printf '%q' "$arg")"
+    done
+    tmux -S "$sock" new-session -d -s "$name" -c "$PWD" "$cmd"
+    chmod 600 "$sock"
+    tmux -S "$sock" pipe-pane -o -t "=${name}" "cat >> $(printf '%q' "$log")"
+fi
+
+if [[ -n "${TMUX:-}" ]]; then
+    exec tmux -S "$sock" switch-client -t "=${name}"
+fi
+exec tmux -S "$sock" attach-session -t "=${name}"
