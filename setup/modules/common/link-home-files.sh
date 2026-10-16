@@ -27,6 +27,9 @@ link_home "${SETUP_FILES_DIR}/home/dircolors" "${DOTFILES_HOME}/.dircolors"
 link_home "${SETUP_FILES_DIR}/home/gtkrc-2.0" "${DOTFILES_HOME}/.gtkrc-2.0"
 link_home "${SETUP_FILES_DIR}/home/inputrc" "${DOTFILES_HOME}/.inputrc"
 
+ensure_dir "${DOTFILES_HOME}/.grok"
+link_home "${SETUP_FILES_DIR}/home/grok-AGENTS.md" "${DOTFILES_HOME}/.grok/AGENTS.md"
+
 sshconfig_src="${SETUP_FILES_DIR}/home/ssh-config"
 if [[ -f "$sshconfig_src" ]]; then
     ensure_dir "${DOTFILES_HOME}/.ssh"
