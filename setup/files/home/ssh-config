@@ -14,6 +14,14 @@ Host beacon-dragon
     HostName beacon-dragon.stealthdragonland.net
     User root
 
+Host wicket-dragon
+    HostName wicket-dragon.stealthdragonland.net
+    User root
+
+Host bailey-dragon
+    HostName bailey-dragon.stealthdragonland.net
+    User root
+
 Host calligraphy-wyrm
     HostName calligraphy-wyrm.stealthdragonland.net
     User gudem
