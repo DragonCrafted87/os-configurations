@@ -2,6 +2,10 @@
 # Host wrapper: run pre-commit in the shared cache container.
 # Cache lives at ~/.cache/pre-commit-docker so every repo reuses hook envs.
 # Wipe that directory (or run pre-commit-reset-cache) if it gets too big.
+#
+# The work tree is mounted at its host path. A submodule's .git file and a
+# linked worktree's commondir point at a git dir outside that tree, and
+# those paths only resolve when the git dir is mounted at the same host path.
 
 set -euo pipefail
 
@@ -11,6 +15,63 @@ CACHE_DIR="${PRE_COMMIT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/pre-commit-docker
 repo_root() {
     git rev-parse --show-toplevel 2>/dev/null || pwd
 }
+
+path_inside() {
+    local path="$1" root="$2" path_real root_real
+    path_real="$(realpath "$path")"
+    root_real="$(realpath "$root")"
+    [[ "$path_real" == "$root_real" || "$path_real" == "$root_real"/* ]]
+}
+
+# Fills PRE_COMMIT_WORKDIR and PRE_COMMIT_DOCKER_ARGS from the repo in cwd.
+pre_commit_docker_args() {
+    local repo gitdir commondir path
+    local -a safe_paths=()
+    local i=0
+    repo="$(repo_root)"
+    repo="$(realpath "$repo")"
+    if [[ ! -d "$repo/.git" && ! -f "$repo/.git" ]]; then
+        printf 'not a git repo: %s\n' "$repo" >&2
+        return 1
+    fi
+
+    gitdir="$(git -C "$repo" rev-parse --absolute-git-dir)"
+    commondir="$(git -C "$repo" rev-parse --git-common-dir)"
+    if [[ "$commondir" != /* ]]; then
+        commondir="$(realpath "${repo}/${commondir}")"
+    fi
+
+    PRE_COMMIT_WORKDIR="$repo"
+    PRE_COMMIT_DOCKER_ARGS=(
+        -v "${repo}:${repo}"
+        -v "${CACHE_DIR}:/cache"
+        -e PRE_COMMIT_HOME=/cache
+        -e HOME=/tmp
+        -w "$repo"
+    )
+    safe_paths=("$repo")
+    if ! path_inside "$gitdir" "$repo"; then
+        PRE_COMMIT_DOCKER_ARGS+=(-v "${gitdir}:${gitdir}")
+        safe_paths+=("$gitdir")
+    fi
+    if [[ "$commondir" != "$gitdir" ]] && ! path_inside "$commondir" "$repo"; then
+        PRE_COMMIT_DOCKER_ARGS+=(-v "${commondir}:${commondir}")
+        safe_paths+=("$commondir")
+    fi
+
+    PRE_COMMIT_DOCKER_ARGS+=(-e "GIT_CONFIG_COUNT=${#safe_paths[@]}")
+    for path in "${safe_paths[@]}"; do
+        PRE_COMMIT_DOCKER_ARGS+=(
+            -e "GIT_CONFIG_KEY_${i}=safe.directory"
+            -e "GIT_CONFIG_VALUE_${i}=${path}"
+        )
+        i=$((i + 1))
+    done
+}
+
+if [[ "${PRE_COMMIT_TEST_SOURCE:-0}" == "1" ]]; then
+    return 0
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
     printf 'docker is required for pre-commit\n' >&2
@@ -22,12 +83,7 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
 fi
 
 mkdir -p "$CACHE_DIR"
-REPO="$(repo_root)"
-
-if [[ ! -d "$REPO/.git" && ! -f "$REPO/.git" ]]; then
-    printf 'not a git repo: %s\n' "$REPO" >&2
-    exit 1
-fi
+pre_commit_docker_args
 
 # Host uid so hook-written files are not root-owned. Git 2.35+ also
 # refuses a bind-mount owned by another user unless safe.directory is set.
@@ -43,13 +99,6 @@ fi
 
 exec docker run --rm -i \
     -u "${uid}:${gid}" \
-    -v "$REPO":/src \
-    -v "$CACHE_DIR":/cache \
-    -e PRE_COMMIT_HOME=/cache \
-    -e HOME=/tmp \
-    -e GIT_CONFIG_COUNT=1 \
-    -e GIT_CONFIG_KEY_0=safe.directory \
-    -e GIT_CONFIG_VALUE_0=/src \
-    -w /src \
     --network host \
+    "${PRE_COMMIT_DOCKER_ARGS[@]}" \
     "$IMAGE" "${cmd[@]}"
