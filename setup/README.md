@@ -282,7 +282,7 @@ command. DNS for `ward-drake.stealthdragonland.net` stays on
 `--target`. `ssh ward-drake` uses `root` on port 22222 once the name
 resolves and `ssh-config` is the file the client is reading.
 
-## OpenWrt keys (mist-dragon, beacon-dragon)
+## OpenWrt keys (mist-dragon, beacon-dragon, wicket-dragon, bailey-dragon)
 
 Dropbear on these boxes reads `/etc/dropbear/authorized_keys` for root.
 `~/.ssh/authorized_keys` is not that file. The updater is
@@ -306,7 +306,7 @@ Copy secrets onto a new box without going through `init-remote.sh`:
 ~/machine-setup/setup/utility/transfer-secrets.sh dragon@newbox.lan
 ```
 
-## OpenWrt host status (mist-dragon, beacon-dragon, wicket-dragon)
+## OpenWrt host status (mist-dragon, beacon-dragon, wicket-dragon, bailey-dragon)
 
 `setup/files/status/host-status.sh` is the collector. It is a byte copy
 of the host-status image script. Copy it to `/usr/bin/host-status.sh`.
