@@ -31,7 +31,7 @@ if ! tmux -S "$sock" has-session -t "=${name}" 2>/dev/null; then
     done
     tmux -S "$sock" new-session -d -s "$name" -c "$PWD" "$cmd"
     chmod 600 "$sock"
-    tmux -S "$sock" pipe-pane -o -t "=${name}" "cat >> $(printf '%q' "$log")"
+    tmux -S "$sock" pipe-pane -o -t "=${name}:" "cat >> $(printf '%q' "$log")"
 fi
 
 if [[ -n "${TMUX:-}" ]]; then
