@@ -100,6 +100,8 @@ printf '%s\n' "$out" | grep -q 'NEWKEY9f3a' && fail "changed merge printed the n
 grep -q 'merge-kubeconfig.py' "${repo}/setup/modules/compute/install-k3s.sh" \
     || fail "install-k3s does not refresh the kubeconfig"
 grep -q 'import yaml' "$tool" && fail "merge imports PyYAML"
+grep -q 'as_root python3' "${repo}/setup/modules/compute/install-k3s.sh" \
+    || fail "htpc kubeconfig is not written as root"
 # k3s writes the nested map before the name.
 cat >"${work}/k3s.yaml" <<EOF
 apiVersion: v1

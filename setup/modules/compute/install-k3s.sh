@@ -268,13 +268,20 @@ refresh_kubeconfig() {
     fi
     if [[ "$role" == "workstation" ]]; then
         dest="${DOTFILES_HOME}/.kube/config"
+        python3 "${SETUP_DIR}/files/k3s/merge-kubeconfig.py" \
+            --server "$tmp" \
+            --dest "$dest" \
+            --server-url "https://${K3S_REGISTRATION}:6443"
     else
+        # The htpc file is root mode 0600. The role runs as the account,
+        # which cannot create a temp file in /etc/rancher/k3s.
         dest="$(syspath /etc/rancher/k3s/htpc.kubeconfig)"
+        as_root mkdir -p "$(dirname "$dest")"
+        as_root python3 "${SETUP_DIR}/files/k3s/merge-kubeconfig.py" \
+            --server "$tmp" \
+            --dest "$dest" \
+            --server-url "https://${K3S_REGISTRATION}:6443"
     fi
-    python3 "${SETUP_DIR}/files/k3s/merge-kubeconfig.py" \
-        --server "$tmp" \
-        --dest "$dest" \
-        --server-url "https://${K3S_REGISTRATION}:6443"
     rm -f "$tmp"
 }
 
