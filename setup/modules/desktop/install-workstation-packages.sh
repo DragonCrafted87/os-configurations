@@ -33,7 +33,6 @@ ensure_packages \
     rust-ripgrep \
     docker \
     docker-compose \
-    kubernetes-client \
     rclone \
     remmina \
     remmina-plugins-rdp \

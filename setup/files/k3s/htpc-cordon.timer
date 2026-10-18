@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch HTPC display and playback for the k3s cordon
+
+[Timer]
+OnBootSec=20
+OnUnitActiveSec=5
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

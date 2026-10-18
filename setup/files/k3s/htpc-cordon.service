@@ -1,0 +1,7 @@
+[Unit]
+Description=Cordon this HTPC while a display or playback is active
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/htpc-cordon

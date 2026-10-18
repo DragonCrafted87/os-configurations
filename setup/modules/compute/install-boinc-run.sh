@@ -102,11 +102,16 @@ if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
 fi
 
 ensure_dir "$BOINC_DIR"
-ensure_dir "${DOTFILES_HOME}/.config/systemd/user"
 ensure_dir /etc/boinc-client || run sudo mkdir -p /etc/boinc-client
 
-install -m 0644 "${src}/boinc-client.service" \
-    "${DOTFILES_HOME}/.config/systemd/user/boinc-client.service"
+user_unit="${DOTFILES_HOME}/.config/systemd/user/boinc-client.service"
+if [[ -f "$user_unit" ]]; then
+    log "retire user boinc-client"
+    systemctl --user disable --now boinc-client.service || true
+    rm -f "$user_unit"
+    systemctl --user daemon-reload || true
+fi
+sudo install -m 0644 "${src}/boinc-client.service" /etc/systemd/system/boinc-client.service
 
 boinc_changed=0
 install_boinc_file() {
@@ -192,12 +197,12 @@ install_boinc_file "${src}/boinc-status-all.sh" /usr/local/bin/boinc-status-all 
 write_manager_computers "$hosts_list"
 install_manager_desktop
 
-systemctl --user daemon-reload
-enable_user_service boinc-client.service
+sudo systemctl daemon-reload
+enable_service boinc-client.service
 if [[ "$boinc_changed" -eq 1 || "${BOINC_OPENCL_NEW:-0}" == "1" ]] \
-    || ! systemctl --user is-active --quiet boinc-client.service; then
-    log "restart boinc-client user unit"
-    run systemctl --user restart boinc-client.service || run systemctl --user start boinc-client.service
+    || ! systemctl is-active --quiet boinc-client.service; then
+    log "restart boinc-client"
+    run sudo systemctl restart boinc-client.service || run sudo systemctl start boinc-client.service
     sleep 3
 fi
 

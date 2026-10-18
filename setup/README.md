@@ -476,7 +476,7 @@ Source builds pick up `bashrc.d/compiler.bashrc` (`clang`, `lld`,
 not a hard-coded `znver1`.
 
 ```text
-~/.config/systemd/user/boinc-client.service
+/etc/systemd/system/boinc-client.service
 ~/.local/share/boinc/                     data dir
 ~/.cache/boinc-build/boinc                source checkout
 /usr/local/bin/boinc{,mgr,cmd}
@@ -518,11 +518,11 @@ detaches and reattaches.
 file.
 
 In the manager: Advanced → Select computer → `127.0.0.1` + that
-password. Do not let the manager start a second client; the user unit
+password. Do not let the manager start a second client; the system unit
 already owns port 31416.
 
-k3s gets `CPUWeight=500`. BOINC gets `CPUWeight=idle`, `Nice=10`, and
-`lower_client_priority`. Wine (`wine`, `wine64`, `wineserver`) pauses
+`k3s.slice` and `boinc.slice` sit beside `user.slice`. BOINC keeps
+`Nice=10` and `lower_client_priority`. Wine (`wine`, `wine64`, `wineserver`) pauses
 BOINC via `cc_config.xml` exclusive apps. Browsers are not exclusive
 apps so long-lived Brave/Firefox windows do not park the client.
 RAM limits must use `ram_max_used_idle_pct` / `ram_max_used_busy_pct` /
