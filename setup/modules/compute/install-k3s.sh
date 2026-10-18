@@ -129,6 +129,9 @@ write_config() {
             printf 'server: https://%s:6443\n' "$K3S_REGISTRATION"
             printf 'token-file: /etc/rancher/k3s/cluster-token\n'
         fi
+        # Labels and taints are only in this file. The installer also
+        # accepts them as flags, and k3s rejects the taint when both
+        # sources carry it.
         printf 'node-label:\n- homelab.stealthdragonland.net/role=%s\n' "$role"
         while IFS= read -r sub; do
             [[ -n "$sub" ]] || continue
@@ -359,16 +362,7 @@ if install_needed; then
         "$kind"
         --node-name "$node"
         --resolv-conf /run/systemd/resolve/resolv.conf
-        --node-label "homelab.stealthdragonland.net/role=${role}"
     )
-    while IFS= read -r sub; do
-        [[ -n "$sub" ]] || continue
-        args+=(--node-label "homelab.stealthdragonland.net/subrole-${sub}=true")
-    done < <(read_saved_subroles)
-    case "$role" in
-        workstation) args+=(--node-taint "purpose=workstation:NoSchedule") ;;
-        htpc) args+=(--node-taint "purpose=htpc:NoSchedule") ;;
-    esac
     if [[ "$kind" == "server" ]]; then
         args+=(
             --disable traefik
