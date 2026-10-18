@@ -107,6 +107,8 @@ grep -q 'dry-run: start hypervvssd.service' <<<"$dry_out" \
     || fail "dry-run missed VSS: ${dry_out}"
 grep -q 'dry-run: start hypervfcopyd.service' <<<"$dry_out" \
     || fail "dry-run missed file copy: ${dry_out}"
+grep -q 'dry-run: drop-in chronyd.service foreground' <<<"$dry_out" \
+    || fail "dry-run missed the chronyd drop-in: ${dry_out}"
 grep -q 'dry-run: start chronyd.service' <<<"$dry_out" \
     || fail "dry-run missed chronyd: ${dry_out}"
 grep -q 'dry-run: dracut -f' <<<"$dry_out" \

@@ -14,16 +14,22 @@
 # Those units ExecStart /usr/sbin/hypervkvpd, hypervvssd, and hypervfcopyd.
 # The package installs /usr/bin/hv_kvp_daemon, hv_vss_daemon, and
 # hv_fcopy_uio_daemon instead, and the units have no [Install] section.
-# Udev wants them when the vmbus devices appear. A drop-in points each
-# unit at the binary the package owns, and this module starts them.
+# Each unit BindsTo its vmbus device. systemd waits for a udev event
+# that already happened at boot, then stops the service because the
+# device unit is still inactive. This module triggers the sysfs node
+# that is already there, then starts the unit. A missing node means
+# that host integration service is off, so the unit is skipped.
 #
 # chrony comes from the extra repo (enable-rock-repos). The unit is
-# chronyd.service. Hyper-V time sync stays in hv_utils. That module also
-# publishes the KVP, VSS, and file-copy devices, so it is not blacklisted
-# and the host integration service is left on. chronyd is NTP while the
-# guest is running; hv_utils still steps the clock at boot and after
-# resume. If the two fight, turn off Time synchronization on the VM in
-# Hyper-V rather than changing this module.
+# chronyd.service. OpenMandriva ships it as Type=forking with
+# PIDFile=/var/run/chronyd.pid. chronyd 4.6 writes no pid file, so
+# systemd waits in start-post and then kills the daemon. A drop-in
+# runs chronyd -n as Type=simple. Hyper-V time sync stays in hv_utils.
+# That module also publishes the KVP, VSS, and file-copy devices, so
+# it is not blacklisted and the host integration service is left on.
+# chronyd is NTP while the guest is running; hv_utils still steps the
+# clock at boot and after resume. If the two fight, turn off Time
+# synchronization on the VM in Hyper-V rather than changing this module.
 #
 # /etc/dracut.conf.d/hyperv-guest.conf forces hv_vmbus, hv_storvsc,
 # hv_netvsc, and hv_utils into the initramfs. dracut -f runs only when
@@ -76,16 +82,6 @@ start_unit() {
     sudo systemctl start "$unit" || die "could not start ${unit}"
 }
 
-restart_unit() {
-    local unit="$1"
-    if systemctl is-active --quiet "$unit"; then
-        log "restart ${unit}"
-        sudo systemctl restart "$unit" || die "could not restart ${unit}"
-        return 0
-    fi
-    start_unit "$unit"
-}
-
 current_exec_path() {
     local show="$1"
     show="$(systemctl show -p ExecStart --value "$show" 2>/dev/null || true)"
@@ -114,6 +110,27 @@ point_unit_at() {
     ensure_systemd_dropin "$unit" exec-path "$body"
 }
 
+hyperv_sysfs_dev() {
+    case "$1" in
+        hypervkvpd.service) printf '%s\n' '/sys/devices/virtual/misc/vmbus!hv_kvp' ;;
+        hypervvssd.service) printf '%s\n' '/sys/devices/virtual/misc/vmbus!hv_vss' ;;
+        hypervfcopyd.service) printf '%s\n' '/sys/devices/virtual/misc/vmbus!hv_fcopy' ;;
+        *) return 1 ;;
+    esac
+}
+
+prepare_hyperv_device() {
+    local unit="$1"
+    local dev
+    dev="$(hyperv_sysfs_dev "$unit")" || return 0
+    if [[ ! -e "$dev" ]]; then
+        log "skip ${unit}; ${dev} is absent"
+        return 1
+    fi
+    log "udev trigger ${dev}"
+    sudo udevadm trigger --action=add "$dev"
+}
+
 install_hyperv_services() {
     local unit bin path
     local -a known=(hypervkvpd.service hypervvssd.service hypervfcopyd.service)
@@ -132,16 +149,23 @@ install_hyperv_services() {
         bin="$(hyperv_unit_bin "$unit")"
         [[ -x "$bin" ]] || die "hyperv-tools did not install ${bin}"
         path="$(current_exec_path "$unit")"
-        if [[ "$path" == "$bin" ]]; then
-            start_unit "$unit"
+        if [[ "$path" != "$bin" ]]; then
+            point_unit_at "$unit" "$bin"
+            if [[ "$(current_exec_path "$unit")" != "$bin" ]]; then
+                run sudo systemctl daemon-reload
+            fi
+            [[ "$(current_exec_path "$unit")" == "$bin" ]] || die "${unit} ExecStart is still ${path}"
+        fi
+        if ! prepare_hyperv_device "$unit"; then
             continue
         fi
-        point_unit_at "$unit" "$bin"
-        if [[ "$(current_exec_path "$unit")" != "$bin" ]]; then
-            run sudo systemctl daemon-reload
+        if [[ "$path" != "$bin" ]] && systemctl is-active --quiet "$unit"; then
+            log "restart ${unit}"
+            sudo systemctl restart "$unit" || die "could not restart ${unit}"
+        else
+            start_unit "$unit"
         fi
-        [[ "$(current_exec_path "$unit")" == "$bin" ]] || die "${unit} ExecStart is still ${path}"
-        restart_unit "$unit"
+        systemctl is-active --quiet "$unit" || die "${unit} did not stay active"
     done
 
     while IFS= read -r unit || [[ -n "$unit" ]]; do
@@ -206,10 +230,14 @@ install_hyperv_dracut() {
 }
 
 start_chronyd() {
+    local body
+    body="[Service]"$'\n'"Type=simple"$'\n'"PIDFile="$'\n'"ExecStart="$'\n'"ExecStart=/usr/sbin/chronyd -n -u chrony"
     if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        log "dry-run: drop-in chronyd.service foreground"
         log "dry-run: start chronyd.service"
         return 0
     fi
+    ensure_systemd_dropin chronyd.service foreground "$body"
     start_unit chronyd.service
 }
 

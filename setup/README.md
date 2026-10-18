@@ -181,10 +181,13 @@ services. It does not install or start firewalld.
 `[server]` includes `@subrole.hyperv-guest`. The module returns
 before it changes the machine unless `systemd-detect-virt` prints
 `microsoft`. On a Hyper-V guest it installs `hyperv-tools` and
-`chrony`, points the KVP, VSS, and file-copy units at
-`/usr/bin/hv_kvp_daemon`, `hv_vss_daemon`, and `hv_fcopy_uio_daemon`,
-and forces `hv_vmbus`, `hv_storvsc`, `hv_netvsc`, and `hv_utils` into
-the initramfs. Another role can use the same `@` line or
+`chrony`, runs `chronyd -n` so the OpenMandriva forking unit does not
+wait for a pid file chronyd 4.6 never writes, points the KVP, VSS, and
+file-copy units at `/usr/bin/hv_kvp_daemon`, `hv_vss_daemon`, and
+`hv_fcopy_uio_daemon`, and forces `hv_vmbus`, `hv_storvsc`, `hv_netvsc`,
+and `hv_utils` into the initramfs. A vmbus device that is already
+present is triggered through udev before its unit starts. A missing
+device is skipped. Another role can use the same `@` line or
 `--enable-subrole hyperv-guest`.
 
 Dolphin is the Hyprland file manager (`SUPER+E`). After
