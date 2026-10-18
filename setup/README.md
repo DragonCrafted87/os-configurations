@@ -150,7 +150,7 @@ Scripts sit under `modules/<area>/` so the tree shows why they exist.
 | `desktop` | Hyprland, Brave, Flatpak, CUPS, gaming, MIME, VS Code                  |
 | `network` | mounts, bluetooth, NFS server                                          |
 | `compute` | BOINC, k3s, python-dev, MakeMKV, artifact/docker stubs                 |
-| `host`    | `configure-laptop` / `htpc` / `server` leftovers                       |
+| `host`    | `configure-laptop` / `htpc` / `server`, Hyper-V guest                  |
 
 Do not name folders after roles. Laptop is a workstation overlay.
 
@@ -177,6 +177,15 @@ and exports that path to `192.168.0.0/20` (`255.255.240.0`) with
 does not partition a disk or copy data onto `/srv/data`. When firewalld
 is already running it allows the `nfs`, `mountd`, and `rpc-bind`
 services. It does not install or start firewalld.
+
+`[server]` includes `@subrole.hyperv-guest`. The module returns
+before it changes the machine unless `systemd-detect-virt` prints
+`microsoft`. On a Hyper-V guest it installs `hyperv-tools` and
+`chrony`, points the KVP, VSS, and file-copy units at
+`/usr/bin/hv_kvp_daemon`, `hv_vss_daemon`, and `hv_fcopy_uio_daemon`,
+and forces `hv_vmbus`, `hv_storvsc`, `hv_netvsc`, and `hv_utils` into
+the initramfs. Another role can use the same `@` line or
+`--enable-subrole hyperv-guest`.
 
 Dolphin is the Hyprland file manager (`SUPER+E`). After
 `remove-plasma-sddm` strips Plasma, it has no KService/MIME map unless
