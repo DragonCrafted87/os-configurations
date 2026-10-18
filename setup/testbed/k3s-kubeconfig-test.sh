@@ -99,5 +99,34 @@ grep -q "$fixture" "${work}/dest.yaml" && fail "old key stayed in the kubeconfig
 printf '%s\n' "$out" | grep -q 'NEWKEY9f3a' && fail "changed merge printed the new key"
 grep -q 'merge-kubeconfig.py' "${repo}/setup/modules/compute/install-k3s.sh" \
     || fail "install-k3s does not refresh the kubeconfig"
+grep -q 'import yaml' "$tool" && fail "merge imports PyYAML"
+grep -q 'as_root python3' "${repo}/setup/modules/compute/install-k3s.sh" \
+    || fail "htpc kubeconfig is not written as root"
+# k3s writes the nested map before the name.
+cat >"${work}/k3s.yaml" <<EOF
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: Y2E=
+    server: https://127.0.0.1:6443
+  name: default
+contexts:
+- context:
+    cluster: default
+    user: default
+  name: default
+current-context: default
+kind: Config
+users:
+- name: default
+  user:
+    client-certificate-data: Y2VydA==
+    client-key-data: ${fixture}
+EOF
+cp "${work}/dest.yaml" "${work}/k3s-dest.yaml"
+out="$(python3 "$tool" --server "${work}/k3s.yaml" --dest "${work}/k3s-dest.yaml" --server-url "https://k3s.stealthdragonland.net:6443" 2>&1)" \
+    || fail "k3s-shaped merge failed: ${out}"
+grep -q "$fixture" "${work}/k3s-dest.yaml" || fail "k3s-shaped file did not copy the key"
+printf '%s\n' "$out" | grep -q "$fixture" && fail "k3s-shaped merge printed the key"
 
 printf '%s\n' "k3s kubeconfig ok"
