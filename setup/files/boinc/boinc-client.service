@@ -6,9 +6,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=dragon
+Slice=boinc.slice
 Nice=10
-CPUWeight=idle
-IOWeight=25
 OOMScoreAdjust=400
 Restart=on-failure
 RestartSec=10
@@ -24,4 +24,4 @@ ExecReload=/bin/kill -HUP $MAINPID
 ExecStopPost=/bin/rm -f %h/.local/share/boinc/lockfile
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
