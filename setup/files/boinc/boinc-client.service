@@ -13,6 +13,8 @@ OOMScoreAdjust=400
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=60
+# install-boinc-run replaces %h with the account home. A system unit
+# expands %h to /root, and the account cannot create that directory.
 WorkingDirectory=%h/.local/share/boinc
 # Mesa Rusticl hides a driver until it is named here. radeonsi is Navi
 # (7900 XTX, 6500, 680M). r600 is the Caicos Radeon HD 7450. Without

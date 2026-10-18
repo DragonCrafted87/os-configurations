@@ -111,7 +111,14 @@ if [[ -f "$user_unit" ]]; then
     rm -f "$user_unit"
     systemctl --user daemon-reload || true
 fi
-sudo install -m 0644 "${src}/boinc-client.service" /etc/systemd/system/boinc-client.service
+# A system unit expands %h to /root. The client has to use the
+# account home, which is where the manager and boinc-gpu look.
+unit_text="$(<"${src}/boinc-client.service")"
+unit_text="${unit_text//%h/${DOTFILES_HOME}}"
+unit_rendered="$(mktemp)"
+printf '%s\n' "$unit_text" >"$unit_rendered"
+sudo install -m 0644 "$unit_rendered" /etc/systemd/system/boinc-client.service
+rm -f "$unit_rendered"
 
 boinc_changed=0
 install_boinc_file() {
