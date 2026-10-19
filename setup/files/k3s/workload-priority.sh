@@ -25,10 +25,13 @@ if [[ "$role" != "workstation" ]]; then
     exit 0
 fi
 
+# systemctl on a system slice asks polkit for a password. From the
+# idle script that dialog is activity, so the monitors wake back up.
+# sudo -n uses the role's passwordless sudo and fails closed otherwise.
 if [[ "$mode" == "active" ]]; then
-    systemctl set-property k3s.slice CPUWeight=20 IOWeight=20
-    systemctl set-property boinc.slice CPUWeight=1 IOWeight=1
+    sudo -n systemctl set-property k3s.slice CPUWeight=20 IOWeight=20
+    sudo -n systemctl set-property boinc.slice CPUWeight=1 IOWeight=1
 else
-    systemctl set-property k3s.slice CPUWeight=100 IOWeight=50
-    systemctl set-property boinc.slice CPUWeight=10 IOWeight=10
+    sudo -n systemctl set-property k3s.slice CPUWeight=100 IOWeight=50
+    sudo -n systemctl set-property boinc.slice CPUWeight=10 IOWeight=10
 fi

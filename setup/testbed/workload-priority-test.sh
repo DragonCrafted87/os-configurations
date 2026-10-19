@@ -26,7 +26,14 @@ cat >"${work}/systemctl" <<'EOF'
 printf '%s\n' "$*" >>"${LOG}"
 exit 0
 EOF
-chmod 0755 "${work}/systemctl"
+cat >"${work}/sudo" <<'EOF'
+#!/bin/bash
+[[ "$1" == "-n" ]] && shift
+exec "$@"
+EOF
+chmod 0755 "${work}/systemctl" "${work}/sudo"
+grep -q 'sudo -n systemctl set-property' "$helper" \
+    || fail "helper calls systemctl without sudo -n"
 
 LOG="${work}/active.log" PATH="${work}:${PATH}" HOME="${work}" \
     DOTFILES_ROLE_FILE="${work}/role" \
