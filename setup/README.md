@@ -144,13 +144,13 @@ A single module can be run on its own:
 Scripts sit under `modules/<area>/` so the tree shows why they exist.
 `roles.conf` still lists the basename.
 
-| Area      | What lives there                                                       |
-| --------- | ---------------------------------------------------------------------- |
-| `common`  | ssh, sudoers, repos, timezone, locale, plasma removal, links, XDG dirs |
-| `desktop` | Hyprland, Brave, Flatpak, CUPS, gaming, MIME, VS Code                  |
-| `network` | mounts, bluetooth, NFS server                                          |
-| `compute` | BOINC, k3s, python-dev, MakeMKV, artifact/docker stubs                 |
-| `host`    | `configure-laptop` / `htpc` / `server`, Hyper-V guest                  |
+| Area      | What lives there                                                                       |
+| --------- | -------------------------------------------------------------------------------------- |
+| `common`  | ssh, sudoers, repos, timezone, locale, plasma removal, links, XDG dirs, Dolphin places |
+| `desktop` | Hyprland, Brave, Flatpak, CUPS, gaming, MIME, VS Code                                  |
+| `network` | mounts, bluetooth, NFS server                                                          |
+| `compute` | BOINC, k3s, python-dev, MakeMKV, artifact/docker stubs                                 |
+| `host`    | `configure-laptop` / `htpc` / `server`, Hyper-V guest                                  |
 
 Do not name folders after roles. Laptop is a workstation overlay.
 
@@ -189,6 +189,19 @@ and `hv_utils` into the initramfs. A vmbus device that is already
 present is triggered through udev before its unit starts. A missing
 device is skipped. Another role can use the same `@` line or
 `--enable-subrole hyperv-guest`.
+
+`configure-xdg-user-dirs` pins `~/.config/user-dirs.dirs` to the
+lowercase directories (`~/desktop`, `~/downloads`, `~/templates`,
+`~/public`, `~/documents`, `~/music`, `~/pictures`, `~/videos`) and
+sets `enabled=False` in `user-dirs.conf`, so login does not recreate
+the English CamelCase names. `~/network` stays with
+`install-network-mounts`. The same step rewrites
+`~/.local/share/user-places.xbel` when a bookmark `href` is a `file://`
+URL under `$HOME` whose first directory is one of those CamelCase
+names. A name whose CamelCase directory is still in `$HOME` after the
+move is left alone. Trash, remote, network, and recent places stay as
+they are. A second run that already has the lowercase href does not
+rewrite the file.
 
 Dolphin is the Hyprland file manager (`SUPER+E`). After
 `remove-plasma-sddm` strips Plasma, it has no KService/MIME map unless
