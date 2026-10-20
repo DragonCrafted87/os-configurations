@@ -53,12 +53,21 @@ migrate_user_dir() {
 
 rewrite_user_places() {
     local places="${DOTFILES_HOME}/.local/share/user-places.xbel"
-    local tmp mode
+    local tmp mode kept="" old
 
     [[ -f "$places" ]] || return 0
 
+    # migrate_user_dir leaves the CamelCase directory when the lowercase
+    # one already exists and the old one still has files. Those bookmarks
+    # still resolve, so they stay.
+    for old in Desktop Documents Downloads Music Pictures Public Templates Videos; do
+        if [[ -d "${DOTFILES_HOME}/${old}" ]]; then
+            kept="${kept} ${old}"
+        fi
+    done
+
     tmp="$(mktemp)"
-    if ! python3 - "$places" "$tmp" "$DOTFILES_HOME" <<'PY'
+    if ! python3 - "$places" "$tmp" "$DOTFILES_HOME" "$kept" <<'PY'
 from pathlib import Path
 from urllib.parse import unquote
 import re
@@ -67,6 +76,7 @@ import sys
 src = Path(sys.argv[1])
 dest = Path(sys.argv[2])
 home = sys.argv[3]
+kept = set(sys.argv[4].split()) if len(sys.argv) > 4 else set()
 names = {
     "Desktop": "desktop",
     "Documents": "documents",
@@ -77,34 +87,64 @@ names = {
     "Templates": "templates",
     "Videos": "videos",
 }
+hexdigits = "0123456789abcdefABCDEF"
 
-if home.startswith("/") and home != "/":
-    base = home[:-1] if home.endswith("/") else home
-    prefixes = (
-        "file://" + base + "/",
-        "file://localhost" + base + "/",
-    )
-else:
-    prefixes = ()
+def encoded_end(encoded, decoded_target):
+    index = 0
+    length = len(encoded)
+    while index <= length:
+        if unquote(encoded[:index]) == decoded_target:
+            return index
+        if index == length:
+            return None
+        if (
+            encoded[index] == "%"
+            and index + 2 < length
+            and encoded[index + 1] in hexdigits
+            and encoded[index + 2] in hexdigits
+        ):
+            index += 3
+        else:
+            index += 1
+    return None
 
-def rewrite_url(url):
-    matched = None
-    for prefix in prefixes:
-        if url.startswith(prefix):
-            matched = prefix
-            break
-    if matched is None:
-        return url
-    rest = url[len(matched):]
+def split_file(url):
+    if url.startswith("file://localhost/"):
+        scheme = "file://localhost"
+    elif url.startswith("file:///"):
+        scheme = "file://"
+    else:
+        return None
+    rest = url[len(scheme):]
     cut = len(rest)
     for index, char in enumerate(rest):
-        if char in "/?#":
+        if char in "?#":
             cut = index
             break
-    new = names.get(unquote(rest[:cut]))
-    if new is None:
+    return scheme, rest[:cut], rest[cut:]
+
+def rewrite_url(url):
+    parts = split_file(url)
+    if parts is None:
         return url
-    return matched + new + rest[cut:]
+    scheme, path, suffix = parts
+    base = home[:-1] if home.endswith("/") and home != "/" else home
+    if not base.startswith("/") or base == "/":
+        return url
+    decoded = unquote(path)
+    if decoded != base and not decoded.startswith(base + "/"):
+        return url
+    if decoded == base:
+        return url
+    segment = decoded[len(base) + 1:].partition("/")[0]
+    new = names.get(segment)
+    if new is None or segment in kept:
+        return url
+    start = encoded_end(path, base + "/")
+    end = encoded_end(path, base + "/" + segment)
+    if start is None or end is None:
+        return url
+    return scheme + path[:start] + new + path[end:] + suffix
 
 pattern = re.compile(r"""href=(["'])([^"']*)\1""")
 

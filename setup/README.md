@@ -198,9 +198,10 @@ the English CamelCase names. `~/network` stays with
 `install-network-mounts`. The same step rewrites
 `~/.local/share/user-places.xbel` when a bookmark `href` is a `file://`
 URL under `$HOME` whose first directory is one of those CamelCase
-names. Trash, remote, network, and recent places stay as they are. A
-second run that already has the lowercase href does not rewrite the
-file.
+names. A name whose CamelCase directory is still in `$HOME` after the
+move is left alone. Trash, remote, network, and recent places stay as
+they are. A second run that already has the lowercase href does not
+rewrite the file.
 
 Dolphin is the Hyprland file manager (`SUPER+E`). After
 `remove-plasma-sddm` strips Plasma, it has no KService/MIME map unless

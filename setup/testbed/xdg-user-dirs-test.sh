@@ -239,20 +239,68 @@ rc="$(run_module "$fresh" DOTFILES_DRY_RUN=1)"
 grep -F "href=\"file://${fresh}/Desktop\"" "${fresh}/.local/share/user-places.xbel" >/dev/null \
     || fail "fresh dry-run rewrote the Desktop href"
 
-# Both names exist and the old one still has a file: leave it, retarget Places.
+# Both names exist and the old one still has a file: leave that bookmark.
+# A sibling that did move is still retargeted.
 both="${work}/both"
-mkdir -p "${both}/Desktop" "${both}/desktop" "${both}/.local/share"
+mkdir -p "${both}/Desktop" "${both}/desktop" "${both}/Music" "${both}/.local/share"
 seed_checkouts "$both"
 printf 'old\n' >"${both}/Desktop/old"
-printf '%s\n' "<bookmark href=\"file://${both}/Desktop\"><title>Desktop</title></bookmark>" \
-    >"${both}/.local/share/user-places.xbel"
+printf 'song\n' >"${both}/Music/song"
+cat >"${both}/.local/share/user-places.xbel" <<EOF
+<bookmark href="file://${both}/Desktop"><title>Desktop</title></bookmark>
+<bookmark href="file://${both}/Music"><title>Music</title></bookmark>
+EOF
 rc="$(run_module "$both")"
 [[ "$rc" -eq 0 ]] || fail "both dirs exited ${rc}: $(cat "${both}/module.err")"
 [[ -f "${both}/Desktop/old" ]] || fail "non-empty Desktop was removed"
 grep -F "leave ${both}/Desktop" "${both}/module.err" >/dev/null \
     || fail "non-empty Desktop was not left in place"
+grep -F "href=\"file://${both}/Desktop\"" "${both}/.local/share/user-places.xbel" >/dev/null \
+    || fail "Places was retargeted while Desktop still exists"
 grep -F "href=\"file://${both}/desktop\"" "${both}/.local/share/user-places.xbel" >/dev/null \
-    || fail "Places still points at Desktop"
-resolve_dir "file://${both}/desktop"
+    && fail "Places gained a desktop href while Desktop still exists"
+grep -F "href=\"file://${both}/music\"" "${both}/.local/share/user-places.xbel" >/dev/null \
+    || fail "Music href was not rewritten"
+resolve_dir "file://${both}/Desktop"
+resolve_dir "file://${both}/music"
+[[ -f "${both}/music/song" ]] || fail "Music was not renamed"
+
+# A percent-encoded home (space and non-ASCII) still matches.
+encoded="${work}/høme dir"
+mkdir -p "${encoded}/Desktop" "${encoded}/.local/share"
+seed_checkouts "$encoded"
+printf 'marker\n' >"${encoded}/Desktop/marker"
+python3 - "$encoded" <<'PY' || fail "could not seed encoded home"
+from pathlib import Path
+from urllib.parse import quote
+import sys
+home = sys.argv[1]
+href = "file://" + quote(home, safe="/") + "/Desktop"
+path = Path(home, ".local/share/user-places.xbel")
+path.write_text(
+    '<bookmark href="' + href + '"><title>Desktop</title></bookmark>\n',
+    encoding="utf-8",
+)
+PY
+rc="$(run_module "$encoded")"
+[[ "$rc" -eq 0 ]] || fail "encoded home exited ${rc}: $(cat "${encoded}/module.err")"
+python3 - "$encoded" <<'PY' || fail "encoded home href was not rewritten"
+from pathlib import Path
+from urllib.parse import quote, unquote
+import sys
+home = sys.argv[1]
+text = Path(home, ".local/share/user-places.xbel").read_text(encoding="utf-8")
+new = "file://" + quote(home, safe="/") + "/desktop"
+old = "file://" + quote(home, safe="/") + "/Desktop"
+if 'href="' + new + '"' not in text:
+    raise SystemExit("missing " + new + "\n" + text)
+if old in text:
+    raise SystemExit("old href remains\n" + text)
+path = unquote(new.removeprefix("file://")).split("?", 1)[0].split("#", 1)[0]
+if not Path(path).is_dir():
+    raise SystemExit("shortcut does not resolve: " + path)
+PY
+[[ -f "${encoded}/desktop/marker" ]] || fail "encoded home marker was not moved"
+[[ ! -e "${encoded}/Desktop" ]] || fail "encoded home left Desktop"
 
 printf 'xdg user dirs ok\n'
