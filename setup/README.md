@@ -247,6 +247,13 @@ Rock extra / restricted / non-free are enabled on every role. Architecture
 is AMD family 23+ → `znver1`, otherwise `x86_64` (ISO `rpm %{_arch}` is
 usually `x86_64` even on Zen). The opposite arch is disabled.
 
+`enable-pulp-repo` runs on every role after that. It writes
+`/etc/yum.repos.d/homelab-pulp.repo` with baseurl
+`https://pulp.stealthdragonland.net/pulp/content/homelab/`. Packages in
+that distribution are unsigned, so the file sets `gpgcheck=0`.
+`skip_if_unavailable=1` lets a later `dnf` install continue from Rock
+when Pulp does not answer. A second run leaves a matching file alone.
+
 Harvest printer queues on the current workstation, then commit them:
 
 ```bash
