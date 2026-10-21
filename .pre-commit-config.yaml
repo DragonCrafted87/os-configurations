@@ -11,6 +11,9 @@ repos:
     args:
     - --fix=lf
   - id: trailing-whitespace
+    # A unified diff keeps trailing spaces, and a blank context line is
+    # one space. Stripping either line makes patch reject the file.
+    exclude: \.patch$
   - id: check-executables-have-shebangs
   - id: check-shebang-scripts-are-executable
   - id: check-yaml

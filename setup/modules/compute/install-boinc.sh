@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Build BOINC client + manager from the tagged GitHub source.
-# OpenMandriva has no working BOINC rpms; Fedora packages ABI-mismatch.
-# Version comes from setup/versions.conf so a role rerun skips the compile
-# when the stamp matches.
+# Install the homelab boinc RPM, then write the data dir, role prefs,
+# and the system unit. Version comes from setup/versions.conf.
 #
 # Split helpers live next to this file:
 #   install-boinc-defs.sh      build/install functions

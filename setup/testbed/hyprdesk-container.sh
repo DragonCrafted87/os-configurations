@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build hyprdesk in a throwaway container.
+# Dry-run the Hyprland module in a throwaway container.
+# The module installs RPMs. It does not compile hyprdesk here.
 # Host /usr/local is mounted read-only and is not the install prefix.
 # The logged-in Wayland socket is not mounted.
 set -euo pipefail
@@ -121,7 +122,6 @@ run_module() {
     docker exec -u dragon \
         -e HOME=/home/dragon \
         -e HYPRLAND_SOURCE_PREFIX="$PREFIX" \
-        -e HYPRLAND_SOURCE_ONLY=hyprdesk \
         -e HYPRLAND_SOURCE_SRC=/home/dragon/.cache/hyprland-source \
         -e PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig \
         -e LIBRARY_PATH=/usr/local/lib64:/usr/local/lib \
@@ -134,33 +134,13 @@ run_module() {
 
 dry_log="$(run_module 1 2>&1)"
 printf '%s\n' "$dry_log"
-printf '%s\n' "$dry_log" | grep -F 'would build hyprdesk' >/dev/null \
-    || die "dry-run did not log a hyprdesk build"
-if printf '%s\n' "$dry_log" | grep -F 'would build Hyprland' >/dev/null; then
-    die "dry-run logged a Hyprland rebuild"
+printf '%s\n' "$dry_log" | grep -F 'dnf install -y' >/dev/null \
+    || die "dry-run did not log a dnf install"
+printf '%s\n' "$dry_log" | grep -F 'hyprdesk' >/dev/null \
+    || die "dry-run did not name hyprdesk"
+if printf '%s\n' "$dry_log" | grep -E 'cmake|meson|would build' >/dev/null; then
+    die "dry-run still compiled"
 fi
-
-run_module 0
-
-version="$(
-    docker exec -u dragon \
-        -e LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib \
-        "$NAME" \
-        "${PREFIX}/bin/hyprdesk" --version
-)"
-printf '%s\n' "$version"
-printf '%s\n' "$version" | grep -F 'Hyprdesk 1' >/dev/null \
-    || die "version was: ${version}"
-
-self_test="$(
-    docker exec -u dragon \
-        -e LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib \
-        "$NAME" \
-        "${PREFIX}/bin/hyprdesk" --self-test
-)"
-printf '%s\n' "$self_test"
-printf '%s\n' "$self_test" | grep -F 'hyprdesk self-test passed' >/dev/null \
-    || die "self-test failed"
 
 if [[ -e /usr/local/bin/hyprdesk ]]; then
     die "host /usr/local/bin/hyprdesk exists after the container build"

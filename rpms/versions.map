@@ -1,0 +1,34 @@
+# name  versions.conf key  transform
+# transform is strip_v, xkb, full, or fixed:VERSION.
+wayland-protocols WAYLAND_PROTOCOLS_TAG strip_v
+libxkbcommon LIBXKBCOMMON_TAG xkb
+libinput LIBINPUT_TAG strip_v
+re2 RE2_TAG strip_v
+glaze GLAZE_TAG strip_v
+xcb-errors XCB_ERRORS_TAG fixed:1.0.0
+hyprwayland-scanner HYPRWAYLAND_SCANNER_TAG strip_v
+hyprutils HYPRUTILS_TAG strip_v
+hyprlang HYPRLANG_TAG strip_v
+hyprgraphics HYPRGRAPHICS_TAG strip_v
+hyprcursor HYPRCURSOR_TAG strip_v
+hyprland-protocols HYPRLAND_PROTOCOLS_TAG strip_v
+aquamarine AQUAMARINE_TAG strip_v
+hyprwire HYPRWIRE_TAG strip_v
+hyprtoolkit HYPRTOOLKIT_TAG strip_v
+hyprland HYPRLAND_TAG strip_v
+hyprland-qt-support HYPRLAND_QT_SUPPORT_TAG strip_v
+hyprqt6engine HYPRQT6ENGINE_TAG strip_v
+hyprland-guiutils HYPRLAND_GUIUTILS_TAG strip_v
+hypridle HYPRIDLE_TAG strip_v
+hyprlock HYPRLOCK_TAG strip_v
+hyprpaper HYPRPAPER_TAG strip_v
+hyprpicker HYPRPICKER_TAG strip_v
+hyprpolkitagent HYPRPOLKITAGENT_TAG strip_v
+hyprpwcenter HYPRPWCENTER_TAG strip_v
+hyprsunset HYPRSUNSET_TAG strip_v
+hyprsysteminfo HYPRSYSTEMINFO_TAG strip_v
+hyprshutdown HYPRSHUTDOWN_TAG strip_v
+xdg-desktop-portal-hyprland XDPH_TAG strip_v
+hyprdesk HYPRDESK_REV full
+hyprcapture HYPRCAPTURE_REV full
+boinc BOINC_VERSION full

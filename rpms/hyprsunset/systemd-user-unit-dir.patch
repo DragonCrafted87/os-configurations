@@ -1,0 +1,13 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -151,9 +151,7 @@ include(GNUInstallDirs)
+ 
+ install(TARGETS hyprsunset)
+ 
+-pkg_get_variable(SYSTEMD_USER_UNIT_DIR systemd systemduserunitdir)
+-if (NOT SYSTEMD_USER_UNIT_DIR)
+-  set(SYSTEMD_USER_UNIT_DIR "${CMAKE_INSTALL_PREFIX}/lib/systemd/user")
+-endif()
++set(SYSTEMD_USER_UNIT_DIR "${CMAKE_INSTALL_PREFIX}/lib/systemd/user")
+ 
+ install(FILES ${CMAKE_BINARY_DIR}/systemd/hyprsunset.service DESTINATION "${SYSTEMD_USER_UNIT_DIR}")

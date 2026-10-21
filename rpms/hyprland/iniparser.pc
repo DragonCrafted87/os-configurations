@@ -1,0 +1,9 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=/usr/lib64
+includedir=/usr/include/iniparser
+Name=iniparser
+Description=INI file parser
+Version=4.2.1
+Libs=-L${libdir} -liniparser
+Cflags=-I${includedir} -I/usr/include

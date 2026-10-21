@@ -18,11 +18,16 @@ if systemctl list-unit-files boinc-client.service >/dev/null 2>&1; then
     disable_service boinc-client.service || true
 fi
 
-install_runtime_deps
+if [[ "${DOTFILES_DRY_RUN:-0}" != "1" ]]; then
+    install_runtime_deps
+fi
 if boinc_already_built; then
     log "BOINC ${BOINC_VERSION} already installed"
 else
-    build_boinc
+    log "dnf install -y boinc"
+    if [[ "${DOTFILES_DRY_RUN:-0}" != "1" ]]; then
+        sudo dnf install -y boinc
+    fi
 fi
 
 ensure_dir "$BOINC_DIR"
