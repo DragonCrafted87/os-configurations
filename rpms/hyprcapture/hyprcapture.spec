@@ -22,12 +22,26 @@ hyprcapture built from the pin in setup/versions.conf. Files install under /usr/
 %autosetup -n HyprCapture-%{pkg_tag} -p1
 mkdir -p hyprland-src
 tar -xzf %{SOURCE1} -C hyprland-src --strip-components=1
+python3 %{_sourcedir}/../gcc14-prep.py .
 %build
 export CC="%{homelab_cc}"
 export CXX="%{homelab_cxx}"
 export CFLAGS="%{homelab_cflags}"
 export CXXFLAGS="%{homelab_cxxflags}"
 export PKG_CONFIG_PATH="%{_prefix}/lib64/pkgconfig:%{_prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LIBRARY_PATH="%{_prefix}/lib64:%{_prefix}/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
+export PATH="%{_prefix}/bin:${PATH}"
+# The plugin includes generated Hyprland protocol headers and src/version.h.
+cmake -S hyprland-src -B hyprland-src/protocol-build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+    -DCMAKE_PREFIX_PATH=%{_prefix} \
+    -DCMAKE_C_COMPILER="%{homelab_cc}" \
+    -DCMAKE_CXX_COMPILER="%{homelab_cxx}" \
+    -DCMAKE_C_FLAGS="%{homelab_cflags}" \
+    -DCMAKE_CXX_FLAGS="%{homelab_cxxflags}" \
+    -DNO_UWSM:STRING=true
+cmake --build hyprland-src/protocol-build --target generate-protocol-headers -j"$(nproc)"
 cmake -S . -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=%{_prefix} \
@@ -50,5 +64,6 @@ install -d %{buildroot}%{_prefix}/lib %{buildroot}%{_prefix}/bin
 so="$(find build -name libhyprcapture.so -type f -print -quit)"
 install -m 0755 "$so" %{buildroot}%{_prefix}/lib/libhyprcapture.so
 install -m 0755 build/hyprcapture-ui %{buildroot}%{_prefix}/bin/hyprcapture-ui
-find %{buildroot} \( -type f -o -type l \) | sed "s|^%{buildroot}||" > %{_builddir}/%{name}.files
+find %{buildroot} -name '*.la' -delete
+find %{buildroot} \( -type f -o -type l \) -printf '"%p"\n' | sed 's|"%{buildroot}|"|' > %{_builddir}/%{name}.files
 %files -f %{_builddir}/%{name}.files

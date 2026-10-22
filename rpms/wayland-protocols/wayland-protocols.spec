@@ -17,18 +17,23 @@ wayland-protocols built from the pin in setup/versions.conf. Files install under
 
 %prep
 %autosetup -n wayland-protocols-%{pkg_version}
+python3 %{_sourcedir}/../gcc14-prep.py .
 %build
 export CC="%{homelab_cc}"
 export CXX="%{homelab_cxx}"
 export CFLAGS="%{homelab_cflags}"
 export CXXFLAGS="%{homelab_cxxflags}"
-export PKG_CONFIG_PATH="%{_prefix}/lib64/pkgconfig:%{_prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+# The distro wayland-scanner is older than these protocol files. With
+# tests off the scanner is optional, so keep it off the search path.
+export PKG_CONFIG_LIBDIR="%{_prefix}/lib64/pkgconfig:%{_prefix}/lib/pkgconfig:%{_prefix}/share/pkgconfig"
+export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR"
 meson setup build . --prefix=%{_prefix} --libdir=lib64 --buildtype=release \
-    --pkg-config-path="%{_prefix}/lib64/pkgconfig:%{_prefix}/lib/pkgconfig" \
+    --pkg-config-path="$PKG_CONFIG_LIBDIR" \
     -Dtests=false
 meson compile -C build
 
 %install
 DESTDIR=%{buildroot} meson install -C build
-find %{buildroot} \( -type f -o -type l \) | sed "s|^%{buildroot}||" > %{_builddir}/%{name}.files
+find %{buildroot} -name '*.la' -delete
+find %{buildroot} \( -type f -o -type l \) -printf '"%p"\n' | sed 's|"%{buildroot}|"|' > %{_builddir}/%{name}.files
 %files -f %{_builddir}/%{name}.files

@@ -14,20 +14,22 @@ Source1:        hyprland.desktop
 Source2:        hyprland-local.conf
 Source3:        iniparser.pc
 Patch0:         hyprland-gcc14.patch
-BuildRequires:  cmake gcc gcc-c++ pkgconf make mold python3
-Requires:       aquamarine hyprlang hyprutils hyprcursor hyprgraphics hyprland-protocols hyprwayland-scanner hyprwire hyprtoolkit libxkbcommon libinput re2 glaze wayland-protocols xcb-errors
+BuildRequires:  cmake gcc gcc-c++ pkgconf make mold python
+Requires:       aquamarine hyprlang hyprutils hyprcursor hyprgraphics hyprland-protocols hyprwayland-scanner hyprwire hyprtoolkit homelab-libxkbcommon homelab-libinput re2 glaze wayland-protocols xcb-errors
 
 %description
 hyprland built from the pin in setup/versions.conf. Files install under /usr/local.
 
 %prep
 %autosetup -n hyprland-source -p1
+python3 %{_sourcedir}/../gcc14-prep.py .
 %build
 export CC="%{homelab_cc}"
 export CXX="%{homelab_cxx}"
 export CFLAGS="%{homelab_cflags}"
 export CXXFLAGS="%{homelab_cxxflags}"
 export PKG_CONFIG_PATH="%{_prefix}/lib64/pkgconfig:%{_prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LIBRARY_PATH="%{_prefix}/lib64:%{_prefix}/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
 cmake -S . -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=%{_prefix} \
@@ -53,5 +55,6 @@ install -d %{buildroot}/etc/ld.so.conf.d
 install -m 0644 %{SOURCE2} %{buildroot}/etc/ld.so.conf.d/hyprland-local.conf
 install -d %{buildroot}%{_prefix}/lib64/pkgconfig
 install -m 0644 %{SOURCE3} %{buildroot}%{_prefix}/lib64/pkgconfig/iniparser.pc
-find %{buildroot} \( -type f -o -type l \) | sed "s|^%{buildroot}||" > %{_builddir}/%{name}.files
+find %{buildroot} -name '*.la' -delete
+find %{buildroot} \( -type f -o -type l \) -printf '"%p"\n' | sed 's|"%{buildroot}|"|' > %{_builddir}/%{name}.files
 %files -f %{_builddir}/%{name}.files

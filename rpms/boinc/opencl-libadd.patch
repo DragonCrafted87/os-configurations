@@ -1,14 +1,10 @@
---- a/api/Makefile.in
-+++ b/api/Makefile.in
-@@ -215,10 +215,10 @@
- 	$(AM_CXXFLAGS) $(CXXFLAGS) $(libboinc_graphics2_la_LDFLAGS) \
- 	$(LDFLAGS) -o $@
- @BUILD_GRAPHICS_API_TRUE@@ENABLE_LIBRARIES_TRUE@am_libboinc_graphics2_la_rpath =  \
- @BUILD_GRAPHICS_API_TRUE@@ENABLE_LIBRARIES_TRUE@	-rpath \
- @BUILD_GRAPHICS_API_TRUE@@ENABLE_LIBRARIES_TRUE@	$(libdir)
--libboinc_opencl_la_LIBADD =
+--- a/api/Makefile.am
++++ b/api/Makefile.am
+@@ -58,6 +58,7 @@
+ pkgconfig_DATA += libboinc_opencl.pc
+ libboinc_opencl_la_SOURCES = $(opencl_files)
+ libboinc_opencl_la_LDFLAGS = -version-number $(LIBBOINC_VERSION)
 +libboinc_opencl_la_LIBADD = -lOpenCL
- am__libboinc_opencl_la_SOURCES_DIST = boinc_opencl.cpp
- @ENABLE_LIBRARIES_TRUE@am__objects_6 = boinc_opencl.lo
- @ENABLE_LIBRARIES_TRUE@am_libboinc_opencl_la_OBJECTS =  \
- @ENABLE_LIBRARIES_TRUE@	$(am__objects_6)
+ 
+ if INSTALL_HEADERS
+ ## install only headers that are meant for exporting the API !!

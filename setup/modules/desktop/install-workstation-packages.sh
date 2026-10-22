@@ -27,6 +27,8 @@ ensure_packages \
     code \
     gcc \
     gcc-c++ \
+    rpm-build \
+    x11-util-macros \
     cmake \
     meson \
     ninja \
