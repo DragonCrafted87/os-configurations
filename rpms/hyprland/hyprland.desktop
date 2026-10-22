@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Hyprland
+Comment=Hyprland built into /usr/local
+Exec=/usr/local/bin/start-hyprland
+TryExec=/usr/local/bin/start-hyprland
+DesktopNames=Hyprland
+Type=Application

@@ -1,25 +1,20 @@
 # Hyprland source prefix
 
-`install-hyprland-source` builds the Hyprland tag and hypr\* ecosystem
-pins from `setup/versions.conf` into `/usr/local`. Role reset removes
-the distro hypr rpms. Ly uses the stock session name **Hyprland**,
+`install-hyprland-source` installs the homelab RPMs for the Hyprland
+tag and the hypr\* ecosystem. Those RPMs place files in `/usr/local`.
+Pins stay in `setup/versions.conf`. Role reset removes the distro
+hypr rpms. Ly uses the stock session name **Hyprland**,
 from `/usr/share/wayland-sessions/hyprland.desktop`, with
-`Exec=/usr/local/bin/start-hyprland`. Re-running the module overwrites
-`/usr/local` in place. `HYPRLAND_SOURCE_PREFIX` is only a one-off
-override.
+`Exec=/usr/local/bin/start-hyprland`. A matching homelab version is
+left installed. `HYPRLAND_SOURCE_PREFIX` is only a one-off override.
 
-This build is GCC 14 + libstdc++ + mold, matching OpenMandriva cooker
-hyprland 0.56.2 / aquamarine. BOINC and MakeMKV source builds still
-use `compiler.bashrc` clang.
+The packages are built with GCC. BOINC is built with Clang. MakeMKV
+still uses `compiler.bashrc` clang.
 
 Bump tags in `setup/versions.conf`. An already-exported env var still
-wins for a one-off (`HYPRLAND_TAG=v0.56.2`). The stamp file under
-`/usr/local/share/hyprland-source/` records the last successful set.
-hyprdesk is not in that stamp. The module records `HYPRDESK_REV` in
-`.hyprdesk-stamp` and builds the desk app from `setup/files/hyprdesk`
-when that file does not match, including when the prefix stamp is already
-current. The volume overlay and start menu requirements are
-`setup/files/hyprdesk/docs/`.
+wins for a one-off (`HYPRLAND_TAG=v0.56.2`). hyprdesk is its own RPM,
+built from `setup/files/hyprdesk`. The volume overlay and start menu
+requirements are `setup/files/hyprdesk/docs/`.
 
 ## When the stack moves to `/usr`
 
@@ -32,7 +27,7 @@ Keep the Rock compile shims (GCC 14 `append_range` / `#embed` /
 dual-session.
 
 - [ ] Build an rpm that installs this stack into `/usr` once a package
-  repo exists. Until that package exists, the prefix stays `/usr/local`.
+  repo exists. The homelab RPMs install to `/usr/local`, not `/usr`.
 
 ### Host
 

@@ -1,0 +1,36 @@
+diff --git a/src/core/Logger.hpp b/src/core/Logger.hpp
+index 7fc66d4..36054f4 100644
+--- a/src/core/Logger.hpp
++++ b/src/core/Logger.hpp
+@@ -8,6 +8,31 @@
+ 
+ #include "../helpers/Env.hpp"
+ 
++
++#include <format>
++#include <string>
++#include <vector>
++
++template <>
++struct std::formatter<std::vector<std::string>> {
++    constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
++    auto format(const std::vector<std::string>& values, std::format_context& ctx) const {
++        auto out = ctx.out();
++        *out++ = '[';
++        bool first = true;
++        for (const auto& value : values) {
++            if (!first) {
++                *out++ = ',';
++                *out++ = ' ';
++            }
++            first = false;
++            out = std::format_to(out, "{}", value);
++        }
++        *out++ = ']';
++        return out;
++    }
++};
++
+ namespace Hyprtoolkit {
+     class CLogger {
+       public:

@@ -1,0 +1,38 @@
+diff --git a/src/resource/AsyncResourceGatherer.cpp b/src/resource/AsyncResourceGatherer.cpp
+index 7e3e7de..e18cc4d 100644
+--- a/src/resource/AsyncResourceGatherer.cpp
++++ b/src/resource/AsyncResourceGatherer.cpp
+@@ -30,9 +30,14 @@ void CAsyncResourceGatherer::enqueue(Hyprutils::Memory::CAtomicSharedPointer<IAs
+ }
+ 
+ void CAsyncResourceGatherer::await(Hyprutils::Memory::CAtomicSharedPointer<IAsyncResource> resource) {
+-    resource->m_impl->awaitingCv = Hyprutils::Memory::makeUnique<std::condition_variable>();
++    // The worker publishes m_ready under awaitingMtx. Waiting only for a
++    // condition variable created after enqueue misses a resource that
++    // already finished, and the caller blocks for good.
+     std::unique_lock<std::mutex> lk(resource->m_impl->awaitingMtx);
+-    resource->m_impl->awaitingCv->wait(lk, [&resource] { return resource->m_impl->awaitingEvent; });
++    if (resource->m_ready)
++        return;
++    resource->m_impl->awaitingCv = Hyprutils::Memory::makeUnique<std::condition_variable>();
++    resource->m_impl->awaitingCv->wait(lk, [&resource] { return resource->m_impl->awaitingEvent || resource->m_ready.load(); });
+     resource->m_impl->awaitingCv.reset();
+ }
+ 
+@@ -64,11 +69,13 @@ void CAsyncResourceGatherer::asyncAssetSpinLock() {
+         for (auto& r : requests) {
+             r->render();
+ 
+-            if (r->m_impl->awaitingCv) {
++            {
++                std::lock_guard<std::mutex> lg(r->m_impl->awaitingMtx);
+                 r->m_impl->awaitingEvent = true;
+-                r->m_impl->awaitingCv->notify_all();
++                r->m_ready               = true;
++                if (r->m_impl->awaitingCv)
++                    r->m_impl->awaitingCv->notify_all();
+             }
+-            r->m_ready = true;
+             r->m_events.finished.emit();
+         }
+     }

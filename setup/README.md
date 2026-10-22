@@ -356,40 +356,33 @@ Add both installed paths to `/etc/sysupgrade.conf`:
 does not install the OpenMandriva Hyprland rpms, uwsm, or
 pavucontrol-qt. Role reset removes the distro `hyprland` package.
 `install-hyprland-source` (workstation / laptop / htpc) exits 0 while
-`rpm -q hyprland` still succeeds. When that package is gone it builds
-the pinned tag plus the hypr\* ecosystem into `/usr/local`.
+a distro `hyprland` package is installed. Vendor `homelab` is our
+package. When that version matches the pin, the module leaves it
+installed. Otherwise it installs the homelab RPMs, which place files
+in `/usr/local`.
 Pins live in `setup/versions.conf` next to the BOINC and MakeMKV
-versions. Current pin is **v0.56.2**; a later bump overwrites
-`/usr/local` in place. Do not set the prefix to `/usr`.
+versions. Current pin is **v0.56.2**. Do not set the prefix to `/usr`.
+`rpms/` builds one RPM per source project, for `x86_64` and `znver1`.
 
 Ly session name is **Hyprland**, with
 `Exec=/usr/local/bin/start-hyprland`. The desktop file is
 `/usr/share/wayland-sessions/hyprland.desktop`.
 `hypridle`, `hyprpolkitagent`, the Hyprland portal, `hyprsunset`, and
 `hyprpaper` exec `/usr/local`. hyprpwcenter is the volume UI.
-hyprdesk is the start menu and volume OSD, on its own `.hyprdesk-stamp`,
-so installing it does not rebuild the prefix. `hyprdesk.service` starts
+hyprdesk is the start menu and volume OSD. `hyprdesk.service` starts
 it after `hyprland-session.service`. Super+Space runs
-`/usr/local/bin/hyprdesk --toggle`.
-
-OpenMandriva has no single published dep list. The module translates the
-Fedora set from [Hyprland discussion #284](https://github.com/hyprwm/Hyprland/discussions/284)
-plus current cmake/Qt6 pieces, using the shared `pick_pkg` from `lib.sh`
-(lib64\* first on 64-bit).
+`/usr/local/bin/hyprdesk --toggle`. The xkb data link
+`/usr/local/share/X11/xkb` stays a role step. It points at the distro
+`/usr/share/X11/xkb`.
 
 ```bash
-mkdir -p ~/.cache/hyprland-source
-~/machine-setup/setup/modules/desktop/install-hyprland-source.sh 2>&1 | tee ~/.cache/hyprland-source/build.log
-HYPRLAND_SOURCE_ONLY=Hyprland ~/machine-setup/setup/modules/desktop/install-hyprland-source.sh 2>&1 | tee -a ~/.cache/hyprland-source/build.log
-HYPRLAND_SOURCE_FORCE=1 ~/machine-setup/setup/modules/desktop/install-hyprland-source.sh 2>&1 | tee ~/.cache/hyprland-source/build.log
+~/machine-setup/setup/modules/desktop/install-hyprland-source.sh
+~/machine-setup/rpms/build.sh
 ```
 
-Override prefix or a tag (`HYPRLAND_TAG`, `AQUAMARINE_TAG`, …) in the
-environment; an exported value wins over `versions.conf`. Sources cache
-under `~/.cache/hyprland-source`. This module forces GCC 14 + libstdc++
-
-- mold (OpenMandriva cooker recipe; Clang 19 crashes Hyprland at
-  launch). Other source builds still use `compiler.bashrc` clang.
+Override a pin in the environment; an exported value wins over
+`versions.conf`. The Hyprland packages are built with GCC. Clang 19
+crashes the compositor at launch. BOINC is built with Clang.
 
 ## Home Assistant notifications
 
@@ -474,37 +467,31 @@ build lists the game.
 
 ## BOINC
 
-Every role builds the client and manager from tagged source
-`client_release/8.2/8.2.13`. Override with `BOINC_VERSION`. OpenMandriva
-has no working BOINC rpms. The compile is skipped when
-`/usr/local/share/boinc/.dotfiles-version` already matches the pinned
-version. The manager still needs the wxGTK 3.2 runtime libraries
-(`lib64wx_baseu3.2_0`, `lib64wx_baseu_net3.2_0`,
+Every role installs the homelab `boinc` RPM, version 8.2.13 from
+`setup/versions.conf`. Override with `BOINC_VERSION`. A matching
+homelab version is left installed. The manager still needs the wxGTK
+3.2 runtime libraries (`lib64wx_baseu3.2_0`, `lib64wx_baseu_net3.2_0`,
 `lib64wx_gtk3u_core3.2_0`, `lib64wx_gtk3u_html3.2_0`,
 `lib64wx_gtk3u_webview3.2_0`). GPU detection needs Mesa Rusticl
 (`lib64RusticlOpenCL`), which provides `/etc/OpenCL/vendors/rusticl.icd`.
 The client unit sets `RUSTICL_ENABLE=radeonsi,r600` so that platform
 exposes Navi and the Caicos Radeon HD 7450.
-The compile needs `opencl-headers` and `lib64OpenCL-devel` so
-`libboinc_opencl` links `libOpenCL`. Reset removes the devel packages
-and Rusticl, and a matching version stamp skips the compile, so every
-role run installs the wxGTK libraries and Rusticl again. A stamp match
-does not count until `ldd` shows `libOpenCL.so` on `libboinc_opencl.so`.
+The RPM links `libboinc_opencl` to `libOpenCL`. Reset removes Rusticl,
+so every live role run installs the wxGTK libraries and Rusticl again.
+An RPM version match does not count until `ldd` shows `libOpenCL.so`
+on `libboinc_opencl.so`.
 
-Source builds pick up `bashrc.d/compiler.bashrc` (`clang`, `lld`,
-`-march=native`). On AMD family 23+ that is the matching `znver*` ISA,
-not a hard-coded `znver1`.
+The `boinc` package is built with Clang. The `znver1` RPM uses
+`-march=znver1`. The `x86_64` RPM uses `-march=x86-64`.
 
 ```text
 /etc/systemd/system/boinc-client.service
 ~/.local/share/boinc/                     data dir
-~/.cache/boinc-build/boinc                source checkout
 /usr/local/bin/boinc{,mgr,cmd}
 /usr/local/bin/boinc-config
 /usr/local/bin/boinc-gpu
 /usr/local/bin/boinc-status
 /usr/local/bin/boinc-status-all
-/usr/local/share/boinc/.dotfiles-version
 ```
 
 Repo copies of the helpers keep the `.sh` suffix under

@@ -11,12 +11,18 @@ note() {
     fail=1
 }
 
-on="${repo}/config/hypr/scripts/idle-display-on.sh"
-off="${repo}/config/hypr/scripts/idle-display-off.sh"
+hypr_scripts="${repo}/config/hypr/scripts"
+if [[ ! -d "$hypr_scripts" && -d "$(dirname "$repo")/dot-files/config/hypr/scripts" ]]; then
+    hypr_scripts="$(dirname "$repo")/dot-files/config/hypr/scripts"
+elif [[ ! -d "$hypr_scripts" && -d "$(dirname "$repo")/homelab/dot-files/config/hypr/scripts" ]]; then
+    hypr_scripts="$(dirname "$repo")/homelab/dot-files/config/hypr/scripts"
+fi
+on="${hypr_scripts}/idle-display-on.sh"
+off="${hypr_scripts}/idle-display-off.sh"
 gpu="${repo}/setup/files/boinc/boinc-gpu.sh"
 defs="${repo}/setup/modules/compute/install-boinc-defs.sh"
 source_mod="${repo}/setup/modules/desktop/install-hyprland-source.sh"
-session="${repo}/config/hypr/scripts/graphical-session.sh"
+session="${hypr_scripts}/graphical-session.sh"
 
 grep -q 'hyprctl dispatch dpms on' "$on" && note "idle-display-on still dispatches legacy dpms on"
 grep -q 'hyprctl dispatch dpms off' "$off" && note "idle-display-off still dispatches legacy dpms off"
@@ -24,9 +30,10 @@ grep -q 'hyprctl dispatch dpms off' "$off" && note "idle-display-off still dispa
 grep -q 'lib64RusticlOpenCL' "$defs" || note "runtime deps omit lib64RusticlOpenCL"
 grep -q 'RUSTICL_ENABLE=radeonsi' "${repo}/setup/files/boinc/boinc-client.service" \
     || note "boinc client unit does not enable Rusticl radeonsi"
-grep -q 'opencl-headers' "$defs" || note "build deps omit opencl-headers"
-grep -q 'boinc_opencl_linked' "$defs" || note "stamp check does not require a linked OpenCL API"
-grep -q 'libboinc_opencl_la_LIBADD' "$defs" || note "build does not link libboinc_opencl against OpenCL"
+grep -q 'opencl-headers' "${repo}/rpms/boinc/boinc.spec" || note "boinc spec omits opencl-headers"
+grep -q 'boinc_opencl_linked' "$defs" || note "version check does not require a linked OpenCL API"
+grep -q 'libboinc_opencl_la_LIBADD' "${repo}/rpms/boinc/boinc.spec" \
+    || note "boinc spec does not link libboinc_opencl against OpenCL"
 grep -q 'enable_source_session_units' "$source_mod" || note "source install never enables session units"
 
 python3 - "$source_mod" <<'PY' || note "stamp-current path does not enable hypridle"
@@ -47,11 +54,19 @@ if [[ "$fail" -ne 0 ]]; then
     exit 1
 fi
 
-# shellcheck disable=SC1091
-. "$defs"
-
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+
+dots="${work}/dots"
+mkdir -p "${dots}/bashrc.d" "${work}/home/.config/dot-files"
+printf '# fixture\n' >"${dots}/bashrc.d/compiler.bashrc"
+printf 'dot-files=%s\nmachine-setup=%s\n' "$dots" "$repo" \
+    >"${work}/home/.config/dot-files/checkouts"
+export DOTFILES_HOME="${work}/home"
+export DOTFILES_USER="$(id -un)"
+unset DOTFILES_LIB_LOADED
+# shellcheck disable=SC1091
+. "$defs"
 
 mkdir -p "${work}/prefix/bin" "${work}/prefix/lib" "${work}/prefix/share/boinc"
 for bin in boinc boincmgr boinccmd; do
@@ -62,7 +77,9 @@ printf '%s\n' "$BOINC_VERSION" >"${work}/prefix/share/boinc/.dotfiles-version"
 printf 'placeholder\n' >"${work}/prefix/lib/libboinc_opencl.so"
 
 BOINC_PREFIX="${work}/prefix"
-STAMP="${BOINC_PREFIX}/share/boinc/.dotfiles-version"
+rpm() {
+    printf '%s homelab\n' "$BOINC_VERSION"
+}
 ldd() {
     printf '%s\n' "libstdc++.so.6 => /lib64/libstdc++.so.6"
 }
@@ -76,6 +93,7 @@ if ! boinc_already_built; then
     note "already-built rejects an OpenCL-linked API"
 fi
 unset -f ldd
+unset -f rpm
 
 if [[ "$fail" -ne 0 ]]; then
     exit 1
