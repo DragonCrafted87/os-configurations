@@ -1,0 +1,12 @@
+[Unit]
+Description=Jabra Speak 710 pad volume and mic mute
+PartOf=workstation-session.target
+After=hyprland-session.service
+ConditionPathExists=%h/.config/hypr/scripts/jabra-pads.py
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.config/hypr/scripts/jabra-pads.py watch
+Restart=on-failure
+RestartSec=2
+Slice=session.slice

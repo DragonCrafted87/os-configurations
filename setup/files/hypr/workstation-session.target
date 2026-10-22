@@ -8,6 +8,7 @@ Wants=workstation-brave.service
 Wants=workstation-steam.service
 Wants=workstation-discord.service
 Wants=workstation-litra.service
+Wants=workstation-jabra-pads.service
 Wants=workstation-kdeconnect.service
 Wants=ntfy-workstations.service
 

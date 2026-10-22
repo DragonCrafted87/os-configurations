@@ -1,0 +1,2 @@
+# Jabra Speak 710. The seat user reads hidraw for the mute pad.
+KERNEL=="hidraw*", ATTRS{idVendor}=="0b0e", ATTRS{idProduct}=="2475", MODE="0660", GROUP="input", TAG+="uaccess"
