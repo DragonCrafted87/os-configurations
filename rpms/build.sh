@@ -10,11 +10,16 @@ versions_file="${repo}/setup/versions.conf"
 map_file="${root}/versions.map"
 out="${root}/out"
 dry=0
+nodeps=0
 
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
         --dry-run)
             dry=1
+            shift
+            ;;
+        --nodeps)
+            nodeps=1
             shift
             ;;
         --packages)
@@ -62,17 +67,19 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done <"$map_file"
 
 rpm_version() {
-    local transform="$1" tag="$2"
+    local transform="$1" tag="$2" version=""
     case "$transform" in
-        strip_v) printf '%s\n' "${tag#v}" ;;
-        xkb) printf '%s\n' "${tag#xkbcommon-}" ;;
-        full) printf '%s\n' "${tag#v}" ;;
-        fixed:*) printf '%s\n' "${transform#fixed:}" ;;
+        strip_v) version="${tag#v}" ;;
+        xkb) version="${tag#xkbcommon-}" ;;
+        full) version="${tag#v}" ;;
+        fixed:*) version="${transform#fixed:}" ;;
         *)
             printf 'unknown version transform: %s\n' "$transform" >&2
             return 1
             ;;
     esac
+    # RPM splits name-version-release on the hyphen.
+    printf '%s\n' "${version//-/.}"
 }
 
 hyprland_version="$(rpm_version strip_v "${conf[HYPRLAND_TAG]}")"
@@ -98,6 +105,8 @@ while IFS= read -r name || [[ -n "$name" ]]; do
         printf 'missing spec %s\n' "$spec" >&2
         exit 1
     }
+    rpm_name="$(awk '/^Name:/ { print $2; exit }' "$spec")"
+    [[ -n "$rpm_name" ]] || rpm_name="$name"
     if [[ "$name" == "boinc" ]]; then
         cc="clang"
         cxx="clang++"
@@ -115,7 +124,14 @@ while IFS= read -r name || [[ -n "$name" ]]; do
             march="x86-64"
         fi
         cflags="-O2 -march=${march}"
-        rpm_file="${out}/${arch}/${name}-${version}-1.${arch}.rpm"
+        # The shim uses string_view. BOINC's configure probes C++11, which
+        # fails if that header is forced in.
+        if [[ "$name" == "boinc" ]]; then
+            cxxflags="${cflags}"
+        else
+            cxxflags="${cflags} -include ${root}/string_view_concat.hpp"
+        fi
+        rpm_file="${out}/${arch}/${rpm_name}-${version}-1.${arch}.rpm"
         top="${out}/top/${name}-${arch}"
         cmd=(
             rpmbuild -bb
@@ -131,9 +147,15 @@ while IFS= read -r name || [[ -n "$name" ]]; do
             --define "homelab_cc ${cc}"
             --define "homelab_cxx ${cxx}"
             --define "homelab_cflags ${cflags}"
-            --define "homelab_cxxflags ${cflags}"
-            "$spec"
+            --define "homelab_cxxflags ${cxxflags}"
+            --define "_build_name_fmt %%{ARCH}/%%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm"
+            --define "_build_pkgcheck_set %{nil}"
+            --define "_build_pkgcheck_srpm %{nil}"
         )
+        if [[ "$nodeps" -eq 1 ]]; then
+            cmd+=(--nodeps)
+        fi
+        cmd+=("$spec")
         if [[ "$dry" -eq 1 ]]; then
             printf 'rpmbuild -bb --target %s %s %s\n' "$arch" "$name" "$version"
             continue

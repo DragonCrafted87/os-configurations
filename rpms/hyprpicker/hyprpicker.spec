@@ -18,12 +18,14 @@ hyprpicker built from the pin in setup/versions.conf. Files install under /usr/l
 
 %prep
 %autosetup -n hyprpicker-%{pkg_version}
+python3 %{_sourcedir}/../gcc14-prep.py .
 %build
 export CC="%{homelab_cc}"
 export CXX="%{homelab_cxx}"
 export CFLAGS="%{homelab_cflags}"
 export CXXFLAGS="%{homelab_cxxflags}"
 export PKG_CONFIG_PATH="%{_prefix}/lib64/pkgconfig:%{_prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LIBRARY_PATH="%{_prefix}/lib64:%{_prefix}/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
 cmake -S . -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=%{_prefix} \
@@ -43,5 +45,6 @@ cmake --build build --config Release -j"$(nproc)"
 
 %install
 DESTDIR=%{buildroot} cmake --install build
-find %{buildroot} \( -type f -o -type l \) | sed "s|^%{buildroot}||" > %{_builddir}/%{name}.files
+find %{buildroot} -name '*.la' -delete
+find %{buildroot} \( -type f -o -type l \) -printf '"%p"\n' | sed 's|"%{buildroot}|"|' > %{_builddir}/%{name}.files
 %files -f %{_builddir}/%{name}.files

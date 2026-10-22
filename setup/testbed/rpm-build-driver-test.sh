@@ -24,6 +24,8 @@ while IFS= read -r name || [[ -n "$name" ]]; do
 done <"$packages"
 grep -F 'rpmbuild' <<<"$out" >/dev/null || fail "dry-run did not name rpmbuild"
 grep -E 'cmake|meson|configure' <<<"$out" && fail "dry-run compiled a project"
+grep -F -- '--target x86_64 re2 2025.11.05' <<<"$out" >/dev/null \
+    || fail "re2 version kept a hyphen"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT

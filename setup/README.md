@@ -363,6 +363,8 @@ in `/usr/local`.
 Pins live in `setup/versions.conf` next to the BOINC and MakeMKV
 versions. Current pin is **v0.56.2**. Do not set the prefix to `/usr`.
 `rpms/` builds one RPM per source project, for `x86_64` and `znver1`.
+The workstation role installs `rpm-build` and `x11-util-macros` so that
+machine can run `rpms/build.sh`.
 
 Ly session name is **Hyprland**, with
 `Exec=/usr/local/bin/start-hyprland`. The desktop file is
