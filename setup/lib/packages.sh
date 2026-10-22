@@ -28,6 +28,23 @@ ensure_packages() {
     run sudo dnf install -y "$@"
 }
 
+# dnf 4 stops when /usr/local already has the same path and no package
+# owns it. Download the transaction, then let rpm replace those files.
+install_homelab_rpms() {
+    local dir
+    if [[ "$#" -eq 0 ]]; then
+        return 0
+    fi
+    log "dnf install -y $*"
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        return 0
+    fi
+    dir="$(mktemp -d)"
+    dnf download -y --resolve --destdir "$dir" "$@"
+    sudo rpm -Uvh --replacefiles "${dir}/"*.rpm
+    rm -rf "$dir"
+}
+
 # First exact name that is installed or available. OpenMandriva names are
 # lowercase. On 64-bit, libfoo-devel is the 32-bit compat package and
 # lib64foo-devel is the real one — try lib64* first even if the caller

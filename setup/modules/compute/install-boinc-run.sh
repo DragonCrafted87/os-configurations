@@ -24,9 +24,10 @@ fi
 if boinc_already_built; then
     log "BOINC ${BOINC_VERSION} already installed"
 else
-    log "dnf install -y boinc"
-    if [[ "${DOTFILES_DRY_RUN:-0}" != "1" ]]; then
-        sudo dnf install -y boinc
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        log "dnf install -y boinc"
+    else
+        install_homelab_rpms boinc
     fi
 fi
 

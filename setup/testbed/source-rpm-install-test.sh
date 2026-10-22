@@ -173,4 +173,11 @@ grep -F 'dnf install -y boinc' <<<"$out" >/dev/null || fail "old boinc did not l
 assert_no_compile "$out"
 assert_dnf_idle
 
+grep -F 'rpm -Uvh --replacefiles' "${repo}/setup/lib/packages.sh" >/dev/null \
+    || fail "homelab install does not replace unpackaged files"
+grep -F 'install_homelab_rpms' "$hypr" >/dev/null \
+    || fail "hyprland install does not use install_homelab_rpms"
+grep -F 'install_homelab_rpms' "${repo}/setup/modules/compute/install-boinc-run.sh" >/dev/null \
+    || fail "boinc install does not use install_homelab_rpms"
+
 printf 'source rpm install ok.\n'
