@@ -359,7 +359,9 @@ pavucontrol-qt. Role reset removes the distro `hyprland` package.
 a distro `hyprland` package is installed. Vendor `homelab` is our
 package. When that version matches the pin, the module leaves it
 installed. Otherwise it installs the homelab RPMs, which place files
-in `/usr/local`.
+in `/usr/local`. dnf 4 stops when that path is already on disk and no
+package owns it, so the module downloads the transaction and runs
+`rpm -Uvh --replacefiles`.
 Pins live in `setup/versions.conf` next to the BOINC and MakeMKV
 versions. Current pin is **v0.56.2**. Do not set the prefix to `/usr`.
 `rpms/` builds one RPM per source project, for `x86_64` and `znver1`.

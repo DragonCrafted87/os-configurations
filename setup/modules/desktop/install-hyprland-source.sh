@@ -170,12 +170,12 @@ installed_homelab_version() {
 }
 
 install_source_rpms() {
-    log "dnf install -y ${HYPRLAND_TOP_LEVEL[*]}"
     if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        log "dnf install -y ${HYPRLAND_TOP_LEVEL[*]}"
         ensure_xkb_data
         exit 0
     fi
-    sudo dnf install -y "${HYPRLAND_TOP_LEVEL[@]}"
+    install_homelab_rpms "${HYPRLAND_TOP_LEVEL[@]}"
     relocate_prefix_user_units
     remove_cutover_leftovers
     ensure_xkb_data
