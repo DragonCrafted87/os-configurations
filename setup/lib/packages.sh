@@ -30,17 +30,20 @@ ensure_packages() {
 
 # dnf 4 stops when /usr/local already has the same path and no package
 # owns it. Download the transaction, then let rpm replace those files.
+# dnf download keeps one hit per arch. The repo holds znver1 and x86_64
+# at the same NEVR, and goal.install of the other arch fails.
 install_homelab_rpms() {
-    local dir
+    local dir arch
     if [[ "$#" -eq 0 ]]; then
         return 0
     fi
+    arch="$(detect_omv_repo_arch)"
     log "dnf install -y $*"
     if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
         return 0
     fi
     dir="$(mktemp -d)"
-    dnf download -y --resolve --destdir "$dir" "$@"
+    dnf download -y --resolve --arch "$arch" --destdir "$dir" "$@"
     sudo rpm -Uvh --replacefiles "${dir}/"*.rpm
     rm -rf "$dir"
 }
