@@ -5,6 +5,44 @@ set -euo pipefail
 # shellcheck disable=SC1091
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../lib/lib.sh"
 
+vscode_repo_body() {
+    cat <<'EOF'
+[code]
+name=Visual Studio Code
+baseurl=https://pulp.stealthdragonland.net/pulp/content/vscode/
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.microsoft.com/keys/microsoft.asc
+EOF
+}
+
+write_vscode_repo() {
+    local dest="$1"
+    local body tmp
+
+    body="$(vscode_repo_body)"
+    if [[ -f "$dest" ]] && [[ "$(cat "$dest")" == "$body" ]]; then
+        return 0
+    fi
+    log "write ${dest}"
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        return 0
+    fi
+    tmp="$(mktemp)"
+    printf '%s' "$body" >"$tmp"
+    if [[ "$dest" == /etc/* ]]; then
+        sudo install -m 0644 "$tmp" "$dest"
+    else
+        install -m 0644 "$tmp" "$dest"
+    fi
+    rm -f "$tmp"
+}
+
+# Tests source this file and call the functions.
+if [[ "${DOTFILES_TEST_SOURCE:-0}" == "1" ]]; then
+    return 0
+fi
+
 require_user
 
 dest="/etc/yum.repos.d/vscode.repo"
@@ -12,16 +50,9 @@ if [[ ! -f "$dest" ]]; then
     log "add Visual Studio Code repo"
     if [[ "${DOTFILES_DRY_RUN:-0}" != "1" ]]; then
         sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
-        sudo tee "$dest" >/dev/null <<'EOF'
-[code]
-name=Visual Studio Code
-baseurl=https://packages.microsoft.com/yumrepos/vscode
-enabled=1
-gpgcheck=1
-gpgkey=https://packages.microsoft.com/keys/microsoft.asc
-EOF
     fi
 fi
+write_vscode_repo "$dest"
 
 ensure_packages \
     code \

@@ -247,12 +247,26 @@ Rock extra / restricted / non-free are enabled on every role. Architecture
 is AMD family 23+ → `znver1`, otherwise `x86_64` (ISO `rpm %{_arch}` is
 usually `x86_64` even on Zen). The opposite arch is disabled.
 
+`point-rock-repos-at-pulp` runs after the Rock repos are enabled. It
+rewrites the baseurl of the eight Rock ids for this machine's
+architecture to `https://pulp.stealthdragonland.net/pulp/content/rock/`.
+`gpgcheck` and `gpgkey` stay. The second public mirror is dropped. A
+matching file is left alone. A dry run prints the rewrite and does
+not write. `distro-release-repos` replaces that file when it updates,
+and the next role run points it at Pulp again.
+
 `enable-pulp-repo` runs on every role after that. It writes
 `/etc/yum.repos.d/homelab-pulp.repo` with baseurl
 `https://pulp.stealthdragonland.net/pulp/content/homelab/`. Packages in
 that distribution are unsigned, so the file sets `gpgcheck=0`.
 `skip_if_unavailable=1` lets a later `dnf` install continue from Rock
 when Pulp does not answer. A second run leaves a matching file alone.
+
+Brave, Visual Studio Code, and Temurin 25 install from the same Pulp
+host. Their base paths are `brave/x86_64/`, `vscode/`, and
+`adoptium/rhel/9/x86_64/`. The vendor gpg keys stay on the vendor
+hosts. Flatpak, the k3s install script, and the tarball downloads are
+not pointed at Pulp.
 
 Harvest printer queues on the current workstation, then commit them:
 
