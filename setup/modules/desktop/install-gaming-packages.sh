@@ -171,8 +171,10 @@ install_temurin_25_rpm() {
     esac
     # Adoptium publishes no OpenMandriva tree. The RHEL 9 RPM is the
     # temurin-25-jdk package. OpenMandriva's releasever is 6.0, so a
-    # $ID/$releasever repo URL does not resolve.
-    repo="https://packages.adoptium.net/artifactory/rpm/rhel/9/${arch}"
+    # $ID/$releasever repo URL does not resolve. The RPM bytes come
+    # from the Pulp cache of that Adoptium tree. The gpg key stays
+    # on Adoptium.
+    repo="https://pulp.stealthdragonland.net/pulp/content/adoptium/rhel/9/${arch}/"
     log "install ${TEMURIN_PACKAGE} from ${repo}"
     if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
         printf 'dry-run: dnf download %s\n' "$TEMURIN_PACKAGE"
