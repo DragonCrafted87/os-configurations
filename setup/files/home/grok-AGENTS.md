@@ -10,7 +10,7 @@ https://forgeledger.stealthdragonland.net (imported from Vikunja).
   Vikunja task id redirects from `/vikunja/<id>`.
 - The API is under `/api` (spec at `/api/openapi.json`) and MCP is at
   `/mcp`. Both take `FORGELEDGER_TOKEN` as a bearer token.
-- Find tasks with `GET /api/projects`, then
+- Find tasks with `GET /api/projects` and `GET /api/projects/<id>/trackers`, then
   `GET /api/trackers/<tracker id>/artifacts?query={"text":"<search>"}`
   (or the MCP `list-items` tool).
 - When work you finished completes a task, set its Status to Done: find
