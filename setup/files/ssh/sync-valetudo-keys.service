@@ -1,0 +1,11 @@
+[Unit]
+Description=Push GitHub authorized_keys to besom-wyvern
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=dragon
+Environment=GITHUB_KEYS_USER=DragonCrafted87
+Environment=VALETUDO_SSH=root@besom-wyvern
+ExecStart=/usr/local/bin/valetudo-sync-github-keys.sh
