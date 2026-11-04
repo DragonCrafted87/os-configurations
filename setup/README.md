@@ -346,6 +346,25 @@ password login off cannot lose its only key. The AP is an EnGenius
 EAP1300 on OpenWrt 22.03. It has `uclient-fetch` and no curl. The
 script tries `uclient-fetch`, then curl, then wget. No extra package.
 
+## Valetudo keys (besom-wyvern)
+
+`besom-wyvern` is the Midea robot vacuum. Dropbear is started as
+`dropbear -s -D /oem`, so root's login keys are `/oem/authorized_keys`.
+The root filesystem is squashfs. `Block-Public-IOT` on mist-dragon
+rejects this MAC toward the WAN, so the vacuum cannot fetch GitHub.
+
+`setup/files/ssh/valetudo-sync-github-keys.sh` runs on a machine that
+can reach GitHub. It fetches the account keys and writes that file
+over SSH. A bad or empty fetch leaves the file on the vacuum. A fetch
+that contains none of the keys already there also leaves it. The
+workstation role installs it as
+`/usr/local/bin/valetudo-sync-github-keys.sh` and enables
+`sync-valetudo-keys.timer`. The timer runs as `dragon` two minutes
+after boot and every twelve hours after a successful run.
+
+The DHCP reservation is `besom-wyvern` at `192.168.4.197`
+(`18:41:c3:b6:5f:e8`) on mist-dragon, with DNS enabled.
+
 Copy secrets onto a new box without going through `init-remote.sh`:
 
 ```bash
