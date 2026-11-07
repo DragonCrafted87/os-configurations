@@ -87,6 +87,101 @@ ensure_timezone() {
     run sudo timedatectl set-timezone "$tz"
 }
 
+ntp_server() {
+    local server="${DOTFILES_NTP_SERVER:-192.168.0.1}"
+    [[ "$server" =~ ^[A-Za-z0-9._-]+$ ]] || die "bad DOTFILES_NTP_SERVER ${server}"
+    printf '%s\n' "$server"
+}
+
+timesyncd_ntp_body() {
+    printf '[Time]\nNTP=%s\n' "$(ntp_server)"
+}
+
+# Replace every server and pool line with one server. Other lines stay.
+rewrite_chrony_sources() {
+    local server="$1" line replaced=0
+    local -a out=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^(server|pool)[[:space:]] ]]; then
+            if [[ "$replaced" -eq 0 ]]; then
+                out+=("server ${server} iburst")
+                replaced=1
+            fi
+            continue
+        fi
+        out+=("$line")
+    done
+    if [[ "$replaced" -eq 0 ]]; then
+        out=("server ${server} iburst" "${out[@]}")
+    fi
+    local item
+    for item in "${out[@]}"; do
+        printf '%s\n' "$item"
+    done
+}
+
+install_text_file() {
+    local dest="$1"
+    local contents="$2"
+    local staged
+    staged="$(mktemp)"
+    printf '%s\n' "$contents" >"$staged"
+    if [[ -f "$dest" ]] && cmp -s "$dest" "$staged"; then
+        rm -f "$staged"
+        return 1
+    fi
+    log "ntp ${dest}"
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+        rm -f "$staged"
+        return 0
+    fi
+    if [[ -w "$(dirname "$dest")" ]]; then
+        mv "$staged" "$dest"
+        return 0
+    fi
+    sudo mkdir -p "$(dirname "$dest")"
+    sudo cp "$staged" "$dest"
+    sudo chmod 0644 "$dest"
+    rm -f "$staged"
+}
+
+timesyncd_unit_present() {
+    [[ -f /usr/lib/systemd/system/systemd-timesyncd.service ]] && return 0
+    [[ -f /lib/systemd/system/systemd-timesyncd.service ]] && return 0
+    return 1
+}
+
+ensure_timesyncd_ntp() {
+    local dest="${TIMESYNCD_DROPIN:-/etc/systemd/timesyncd.conf.d/mist-dragon.conf}"
+    local real="/etc/systemd/timesyncd.conf.d/mist-dragon.conf"
+    if [[ "$dest" == "$real" ]] && ! timesyncd_unit_present; then
+        return 0
+    fi
+    install_text_file "$dest" "$(timesyncd_ntp_body)" || return 0
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" || "$dest" != "$real" ]]; then
+        return 0
+    fi
+    if systemctl is-active --quiet systemd-timesyncd.service; then
+        log "restart systemd-timesyncd"
+        sudo systemctl try-restart systemd-timesyncd.service
+    fi
+}
+
+ensure_chrony_ntp() {
+    local conf="${CHRONY_CONF:-/etc/chrony.conf}"
+    local body
+    [[ -f "$conf" ]] || return 0
+    body="$(rewrite_chrony_sources "$(ntp_server)" <"$conf")"
+    install_text_file "$conf" "$body" || return 0
+    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" || "$conf" != /etc/chrony.conf ]]; then
+        return 0
+    fi
+    if systemctl is-active --quiet chronyd.service; then
+        log "restart chronyd"
+        sudo systemctl try-restart chronyd.service
+    fi
+}
+
 # The installer records a short name. The static hostname is the flight
 # FQDN. 127.0.1.1 keeps only that short name, so the FQDN still resolves
 # through DNS instead of loopback.

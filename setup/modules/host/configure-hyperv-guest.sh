@@ -30,6 +30,8 @@
 # chronyd is NTP while the guest is running; hv_utils still steps the
 # clock at boot and after resume. If the two fight, turn off Time
 # synchronization on the VM in Hyper-V rather than changing this module.
+# ensure_chrony_ntp runs after the package install, because the common
+# NTP module runs before this package exists. The server is mist-dragon.
 #
 # /etc/dracut.conf.d/hyperv-guest.conf forces hv_vmbus, hv_storvsc,
 # hv_netvsc, and hv_utils into the initramfs. dracut -f runs only when
@@ -58,6 +60,7 @@ if [[ "${DOTFILES_DRY_RUN:-0}" != "1" ]]; then
         || die "chrony is not available. It is in the OpenMandriva extra repo, which enable-rock-repos turns on"
 fi
 ensure_packages hyperv-tools chrony
+ensure_chrony_ntp
 
 quiesce_other_ntp() {
     local unit state

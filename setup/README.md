@@ -144,13 +144,13 @@ A single module can be run on its own:
 Scripts sit under `modules/<area>/` so the tree shows why they exist.
 `roles.conf` still lists the basename.
 
-| Area      | What lives there                                                                       |
-| --------- | -------------------------------------------------------------------------------------- |
-| `common`  | ssh, sudoers, repos, timezone, locale, plasma removal, links, XDG dirs, Dolphin places |
-| `desktop` | Hyprland, Brave, Flatpak, CUPS, gaming, MIME, VS Code                                  |
-| `network` | mounts, bluetooth, NFS server                                                          |
-| `compute` | BOINC, k3s, python-dev, MakeMKV, artifact/docker stubs                                 |
-| `host`    | `configure-laptop` / `htpc` / `server`, Hyper-V guest                                  |
+| Area      | What lives there                                                                            |
+| --------- | ------------------------------------------------------------------------------------------- |
+| `common`  | ssh, sudoers, repos, timezone, NTP, locale, plasma removal, links, XDG dirs, Dolphin places |
+| `desktop` | Hyprland, Brave, Flatpak, CUPS, gaming, MIME, VS Code                                       |
+| `network` | mounts, bluetooth, NFS server                                                               |
+| `compute` | BOINC, k3s, python-dev, MakeMKV, artifact/docker stubs                                      |
+| `host`    | `configure-laptop` / `htpc` / `server`, Hyper-V guest                                       |
 
 Do not name folders after roles. Laptop is a workstation overlay.
 
@@ -181,14 +181,22 @@ services. It does not install or start firewalld.
 `[server]` includes `@subrole.hyperv-guest`. The module returns
 before it changes the machine unless `systemd-detect-virt` prints
 `microsoft`. On a Hyper-V guest it installs `hyperv-tools` and
-`chrony`, runs `chronyd -n` so the OpenMandriva forking unit does not
-wait for a pid file chronyd 4.6 never writes, points the KVP, VSS, and
+`chrony`, points it at mist-dragon (`192.168.0.1`), runs `chronyd -n`
+so the OpenMandriva forking unit does not wait for a pid file chronyd
+4.6 never writes, points the KVP, VSS, and
 file-copy units at `/usr/bin/hv_kvp_daemon`, `hv_vss_daemon`, and
 `hv_fcopy_uio_daemon`, and forces `hv_vmbus`, `hv_storvsc`, `hv_netvsc`,
 and `hv_utils` into the initramfs. A vmbus device that is already
 present is triggered through udev before its unit starts. A missing
 device is skipped. Another role can use the same `@` line or
 `--enable-subrole hyperv-guest`.
+
+`configure-ntp` runs from `[common]`. It writes
+`/etc/systemd/timesyncd.conf.d/mist-dragon.conf` so `NTP=192.168.0.1`.
+When `/etc/chrony.conf` is already present it replaces every `server`
+and `pool` line with that address. The Hyper-V subrole runs the chrony
+step again after the package install. `[haos]` does not run `[common]`.
+Its root filesystem is erofs, so this module does not change it.
 
 `configure-xdg-user-dirs` pins `~/.config/user-dirs.dirs` to the
 lowercase directories (`~/desktop`, `~/downloads`, `~/templates`,
