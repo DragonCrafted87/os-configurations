@@ -22,6 +22,10 @@ Host bailey-dragon
     HostName bailey-dragon.stealthdragonland.net
     User root
 
+Host besom-wyvern
+    HostName besom-wyvern.stealthdragonland.net
+    User root
+
 Host calligraphy-wyrm
     HostName calligraphy-wyrm.stealthdragonland.net
     User gudem
