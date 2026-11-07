@@ -306,11 +306,12 @@ The same run installs the key updater and the console lock under
 `/mnt/overlay/dot-files`. The root filesystem is erofs, and
 `/etc/systemd/system` is on that filesystem, so the role does not
 install unit files there. A udev rule starts `haos-supervise.sh`
-after the overlay is mounted. The supervisor refreshes the GitHub
-keys two minutes after boot and every twelve hours after a successful
-fetch. A bad or empty fetch leaves the current `authorized_keys` in
-place and retries in two minutes. The script is `/bin/sh`. The
-workstation updater stays
+after the overlay is mounted. The supervisor fetches
+`http://192.168.8.23/authorized_keys` two minutes after boot and
+every twelve hours after a successful fetch. `KEYS_URL` overrides
+that address. A bad or empty fetch leaves the current
+`authorized_keys` in place and retries in two minutes. The script is
+`/bin/sh`. The workstation updater stays
 `/usr/local/bin/sync-github-authorized-keys.sh` and still runs as
 `dragon`.
 
@@ -332,9 +333,10 @@ resolves and `ssh-config` is the file the client is reading.
 
 Dropbear on these boxes reads `/etc/dropbear/authorized_keys` for root.
 `~/.ssh/authorized_keys` is not that file. The updater is
-`setup/files/ssh/openwrt-sync-github-keys.sh`. It is `/bin/sh`. Copy it
-to `/usr/bin/openwrt-sync-github-keys.sh` and run it from root's crontab
-every twelve hours:
+`setup/files/ssh/openwrt-sync-github-keys.sh`. It is `/bin/sh`. It
+fetches `http://192.168.8.23/authorized_keys`. `KEYS_URL` overrides
+that address. Copy it to `/usr/bin/openwrt-sync-github-keys.sh` and
+run it from root's crontab every twelve hours:
 
 ```cron
 0 */12 * * * /usr/bin/openwrt-sync-github-keys.sh
@@ -353,14 +355,12 @@ script tries `uclient-fetch`, then curl, then wget. No extra package.
 The root filesystem is squashfs. `Block-Public-IOT` on mist-dragon
 rejects this MAC toward the WAN, so the vacuum cannot fetch GitHub.
 
-`setup/files/ssh/valetudo-sync-github-keys.sh` runs on a machine that
-can reach GitHub. It fetches the account keys and writes that file
-over SSH. A bad or empty fetch leaves the file on the vacuum. A fetch
-that contains none of the keys already there also leaves it. The
-workstation role installs it as
-`/usr/local/bin/valetudo-sync-github-keys.sh` and enables
-`sync-valetudo-keys.timer`. The timer runs as `dragon` two minutes
-after boot and every twelve hours after a successful run.
+The `iot` CronJob `auth-keys` fetches GitHub and writes
+`/oem/authorized_keys` over SSH. The workstation role does not
+install a second writer. `setup/files/ssh/valetudo-sync-github-keys.sh`
+remains for a one-shot push from a machine that can reach GitHub. A
+bad or empty fetch leaves the file on the vacuum. A fetch that
+contains none of the keys already there also leaves it.
 
 The DHCP reservation is `besom-wyvern` at `192.168.4.197`
 (`18:41:c3:b6:5f:e8`) on mist-dragon, with DNS enabled.

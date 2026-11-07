@@ -603,6 +603,7 @@ chmod 0600 "${home_sync}/.ssh/authorized_keys"
 run_sync() {
     env PATH="${bin}:${old_path}" \
         GITHUB_KEYS_USER=DragonCrafted87 \
+        KEYS_URL=https://github.com/DragonCrafted87.keys \
         DOTFILES_HOME="$home_sync" \
         CURL_MODE="$1" \
         /bin/sh "$sync_sh"

@@ -1,18 +1,17 @@
 #!/bin/sh
-# Replace /root/.ssh/authorized_keys with the keys listed on the GitHub
-# account. Fails closed: a bad or empty fetch leaves the current file.
+# Replace /root/.ssh/authorized_keys with the published key list.
+# Fails closed: a bad or empty fetch leaves the current file.
 # Home Assistant OS has ash and curl. The root filesystem is erofs, so
 # this copy stays POSIX and is installed under /mnt/overlay/dot-files.
 # /root/.ssh is a persistent bind, and that is where the keys land.
 #
-#   GITHUB_KEYS_USER=DragonCrafted87 DOTFILES_HOME=/root ./haos-sync-github-keys.sh
+#   KEYS_URL=https://github.com/DragonCrafted87.keys DOTFILES_HOME=/root ./haos-sync-github-keys.sh
 
 set -eu
 
-GITHUB_KEYS_USER="${GITHUB_KEYS_USER:-DragonCrafted87}"
 DOTFILES_HOME="${DOTFILES_HOME:-/root}"
 auth="${DOTFILES_HOME}/.ssh/authorized_keys"
-url="https://github.com/${GITHUB_KEYS_USER}.keys"
+url="${KEYS_URL:-http://192.168.8.23/authorized_keys}"
 key_re='^[A-Za-z0-9._+-]+(@openssh\.com)? [A-Za-z0-9+/=]+'
 
 mkdir -p "${DOTFILES_HOME}/.ssh"
