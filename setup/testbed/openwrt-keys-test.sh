@@ -78,6 +78,7 @@ run_sync() {
     env PATH="${bin}:${sys}" \
         FETCH_MODE="$2" \
         GITHUB_KEYS_USER=DragonCrafted87 \
+        KEYS_URL=https://github.com/DragonCrafted87.keys \
         AUTH_KEYS_FILE="$auth" \
         /bin/sh "$sync_sh"
 }

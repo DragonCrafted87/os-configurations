@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# Replace ~/.ssh/authorized_keys with the keys listed on the GitHub
-# account. Fails closed: a bad or empty fetch leaves the current file.
+# Replace ~/.ssh/authorized_keys with the published key list. Fails
+# closed: a bad or empty fetch leaves the current file.
 #
-#   GITHUB_KEYS_USER=DragonCrafted87 ./sync-github-authorized-keys.sh
+#   KEYS_URL=https://github.com/DragonCrafted87.keys ./sync-github-authorized-keys.sh
 
 set -euo pipefail
 
-GITHUB_KEYS_USER="${GITHUB_KEYS_USER:-DragonCrafted87}"
 DOTFILES_USER="${DOTFILES_USER:-dragon}"
 DOTFILES_HOME="${DOTFILES_HOME:-/home/${DOTFILES_USER}}"
 auth="${DOTFILES_HOME}/.ssh/authorized_keys"
-url="https://github.com/${GITHUB_KEYS_USER}.keys"
+url="${KEYS_URL:-http://192.168.8.23/authorized_keys}"
 
 mkdir -p "${DOTFILES_HOME}/.ssh"
 chmod 700 "${DOTFILES_HOME}/.ssh"

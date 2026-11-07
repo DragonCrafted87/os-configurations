@@ -1,17 +1,16 @@
 #!/bin/sh
-# Replace /etc/dropbear/authorized_keys with the keys listed on the GitHub
-# account. Fails closed: a bad or empty fetch leaves the current file.
+# Replace /etc/dropbear/authorized_keys with the published key list.
+# Fails closed: a bad or empty fetch leaves the current file.
 # If the file already has keys and the fetch contains none of them, the
 # file stays. That is the case that would remove the only login.
 # OpenWrt has ash. The AP has uclient-fetch and no curl.
 #
-#   GITHUB_KEYS_USER=DragonCrafted87 ./openwrt-sync-github-keys.sh
+#   KEYS_URL=https://github.com/DragonCrafted87.keys ./openwrt-sync-github-keys.sh
 
 set -eu
 
-GITHUB_KEYS_USER="${GITHUB_KEYS_USER:-DragonCrafted87}"
 auth="${AUTH_KEYS_FILE:-/etc/dropbear/authorized_keys}"
-url="https://github.com/${GITHUB_KEYS_USER}.keys"
+url="${KEYS_URL:-http://192.168.8.23/authorized_keys}"
 key_re='^[A-Za-z0-9._+-]+(@openssh\.com)? [A-Za-z0-9+/=]+'
 
 fetch() {

@@ -1,5 +1,5 @@
 [Unit]
-Description=Refresh authorized_keys from GitHub daily
+Description=Refresh authorized_keys from the LAN publisher
 
 [Timer]
 OnBootSec=2min

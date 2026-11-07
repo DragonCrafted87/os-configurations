@@ -1,11 +1,11 @@
 [Unit]
-Description=Sync authorized_keys from GitHub
+Description=Sync authorized_keys from the LAN publisher
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 User=dragon
-Environment=GITHUB_KEYS_USER=DragonCrafted87
+Environment=KEYS_URL=http://192.168.8.23/authorized_keys
 Environment=DOTFILES_USER=dragon
 ExecStart=/usr/local/bin/sync-github-authorized-keys.sh
