@@ -150,6 +150,9 @@ DOTFILES_REPO_URL="${DOTFILES_REPO_URL:-git@github.com:DragonCrafted87/dot-files
 SSH_KEY_PATH="${SSH_KEY_PATH:-${DOTFILES_HOME}/.ssh/id_ed25519}"
 DOTFILES_BASHRC="${DOTFILES_BASHRC:-hw_bashrc.sh}"
 DOTFILES_TIMEZONE="${DOTFILES_TIMEZONE:-America/Chicago}"
+# mist-dragon serves NTP on its LAN address. The name is not used here:
+# timesyncd and chrony must work before DNS is up.
+DOTFILES_NTP_SERVER="${DOTFILES_NTP_SERVER:-192.168.0.1}"
 OMP_INSTALL_DIR="${OMP_INSTALL_DIR:-${DOTFILES_HOME}/bin}"
 CONFIG_SOURCE_DIR="${DOTFILES_ROOT}/config"
 CONFIG_TARGET_DIR="${CONFIG_TARGET_DIR:-${DOTFILES_HOME}/.config}"
