@@ -367,6 +367,14 @@ fi
 destdir="${root}/destdir"
 if ! have_stage install; then
     stage_start install
+    # clang-tools-extra and the remarks library have install rules even
+    # when the earlier targets did not build them.
+    PATH="${stage3}/bin:${PATH}" \
+        build_targets "$stage3" \
+        clang-apply-replacements clang-change-namespace clang-doc \
+        clang-include-cleaner clang-include-fixer clang-move clang-query \
+        clang-reorder-fields find-all-symbols modularize offload-arch \
+        pp-trace Remarks
     rm -rf "$destdir"
     mkdir -p "$destdir"
     DESTDIR="$destdir" cmake --install "$stage3"
