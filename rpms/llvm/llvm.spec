@@ -2,6 +2,9 @@
 # because a three-stage PGO build has to keep its trees across rpmbuild runs.
 %global debug_package %{nil}
 %global _prefix /usr/local
+# The distro helper compiles static-library bitcode with llvm-lto 19,
+# which cannot read LLVM 23 bitcode and then repacks the damaged object.
+%global dont_fix_lto_intermediates_in_static_libraries 1
 
 Name:           homelab-llvm
 Version:        %{pkg_version}
