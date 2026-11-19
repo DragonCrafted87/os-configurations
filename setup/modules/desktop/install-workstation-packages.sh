@@ -56,7 +56,7 @@ write_vscode_repo "$dest"
 
 # Zen machines take the znver1 homelab-llvm package. Other arches keep gcc.
 if [[ "$(detect_omv_repo_arch)" == "znver1" ]]; then
-    install_homelab_rpms homelab-llvm
+    install_homelab_rpms homelab-llvm homelab-rust
 fi
 
 ensure_packages \
