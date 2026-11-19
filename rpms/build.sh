@@ -146,9 +146,9 @@ while IFS= read -r name || [[ -n "$name" ]]; do
         # pipewire/pipewire.h. Those directories are not on the default path.
         dep_cflags="$(pkg-config --cflags pixman-1 libdrm libpipewire-0.3 2>/dev/null || true)"
         cflags="-O2 -march=${march} ${dep_cflags}"
-        # The shim uses string_view. BOINC's configure probes C++11, which
+        # The shim uses string_view. BOINC and MakeMKV probe C++11, which
         # fails if that header is forced in.
-        if [[ "$name" == "boinc" ]]; then
+        if [[ "$name" == "boinc" || "$name" == "makemkv" ]]; then
             cxxflags="${cflags}"
         else
             cxxflags="${cflags} -include ${root}/string_view_concat.hpp"

@@ -31,3 +31,4 @@ xdg-desktop-portal-hyprland
 hyprdesk
 hyprcapture
 boinc
+makemkv

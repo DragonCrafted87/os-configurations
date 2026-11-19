@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Build MakeMKV with the shared LLVM toolchain, enable Ask for single drive
-# mode, and install one Desktop launcher. Skip the whole module when this
-# machine has no DVD/Blu-ray device.
+# Install the homelab MakeMKV RPM and one Desktop launcher. Skip the whole
+# module when this machine has no DVD/Blu-ray device.
 #
-# Version comes from setup/versions.conf. Compiler flags come from
-# bashrc.d/compiler.bashrc via lib.sh.
+# Version comes from setup/versions.conf. The RPM is built by rpms/build.sh.
 
 set -euo pipefail
 # shellcheck disable=SC1091
@@ -13,11 +11,6 @@ set -euo pipefail
 require_user
 
 MAKEMKV_VERSION="${MAKEMKV_VERSION:?set MAKEMKV_VERSION in setup/versions.conf}"
-MAKEMKV_PREFIX="${MAKEMKV_PREFIX:-/usr}"
-STAMP="${MAKEMKV_PREFIX}/share/makemkv/.dotfiles-version"
-BUILD_ROOT="${DOTFILES_HOME}/.cache/makemkv-build"
-OSS_URL="https://www.makemkv.com/download/makemkv-oss-${MAKEMKV_VERSION}.tar.gz"
-BIN_URL="https://www.makemkv.com/download/makemkv-bin-${MAKEMKV_VERSION}.tar.gz"
 
 optical_drives() {
     local node real seen=""
@@ -40,70 +33,28 @@ optical_drives() {
     done
 }
 
-install_build_deps() {
-    local pkgs=()
-    local picked
-    local group
-    local groups=(
-        "gcc"
-        "gcc-c++ gcc-c++-x86_64 gcc-c++-znver1"
-        "glibc-devel lib64c-devel"
-        "libstdc++-devel lib64stdc++-devel"
-        "binutils"
-        "make"
-        "pkgconf pkgconfig"
-        "wget"
-        "lib64openssl-devel openssl-devel"
-        "lib64expat-devel lib64expat1-devel expat-devel"
-        "lib64z-devel zlib-devel"
-        "lib64ffmpeg-devel libffmpeg-devel ffmpeg-devel"
-        "qt5-qtbase-devel lib64qt5core-devel qt5-devel"
-        "lib64mesagl-devel lib64mesaegl-devel mesa-libgl-devel"
-    )
+makemkv_installed() {
+    local query
+    query="$(rpm -q --queryformat '%{VERSION} %{VENDOR}' makemkv 2>/dev/null)" || return 1
+    [[ "$query" == "${MAKEMKV_VERSION} homelab" ]]
+}
 
-    for group in "${groups[@]}"; do
-        # shellcheck disable=SC2086
-        if picked="$(pick_pkg $group)"; then
-            pkgs+=("$picked")
-        else
-            warn "no package matched: $group"
+# The old role build installed into /usr and is not owned by an RPM.
+# Those files sit ahead of /usr/local/bin on PATH.
+remove_unmanaged_makemkv() {
+    local path
+    for path in /usr/bin/makemkv /usr/bin/makemkvcon /usr/bin/sdftool \
+        /usr/lib/libmakemkv.so.1 /usr/lib/libdriveio.so.0 \
+        /usr/share/makemkv/.dotfiles-version; do
+        [[ -e "$path" || -L "$path" ]] || continue
+        if rpm -qf "$path" >/dev/null 2>&1; then
+            continue
         fi
+        run sudo rm -f "$path"
     done
-    ensure_packages "${pkgs[@]}"
-}
-
-compiler_works() {
-    local cc="$1"
-    local tmp src obj
-    command -v "$cc" >/dev/null 2>&1 || return 1
-    tmp="$(mktemp -d)"
-    src="${tmp}/t.c"
-    obj="${tmp}/t"
-    printf 'int main(void){return 0;}\n' >"$src"
-    if "$cc" -o "$obj" "$src" >/dev/null 2>&1; then
-        rm -rf "$tmp"
-        return 0
+    if [[ -d /usr/share/MakeMKV ]] && ! rpm -qf /usr/share/MakeMKV >/dev/null 2>&1; then
+        run sudo rm -rf /usr/share/MakeMKV
     fi
-    rm -rf "$tmp"
-    return 1
-}
-
-pick_compilers() {
-    if [[ -x /usr/local/bin/clang && -x /usr/local/bin/clang++ ]] \
-        && compiler_works /usr/local/bin/clang; then
-        printf '%s %s\n' /usr/local/bin/clang /usr/local/bin/clang++
-        return 0
-    fi
-    if compiler_works gcc && command -v g++ >/dev/null 2>&1; then
-        printf '%s %s\n' gcc g++
-        return 0
-    fi
-    return 1
-}
-
-accept_eula() {
-    mkdir -p tmp
-    printf 'accepted\n' >tmp/eula_accepted
 }
 
 drives="$(optical_drives || true)"
@@ -120,49 +71,14 @@ if getent group cdrom >/dev/null 2>&1; then
     fi
 fi
 
-if [[ -x "${MAKEMKV_PREFIX}/bin/makemkv" && -f "$STAMP" ]] \
-    && [[ "$(cat "$STAMP")" == "$MAKEMKV_VERSION" ]]; then
+if makemkv_installed; then
     log "MakeMKV ${MAKEMKV_VERSION} already installed"
+elif [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
+    log "dnf install -y makemkv"
 else
-    install_build_deps
-    local_cc=""
-    local_cxx=""
-    if read -r local_cc local_cxx < <(pick_compilers); then
-        export CC="$local_cc"
-        export CXX="$local_cxx"
-        log "MakeMKV compilers ${local_cc} / ${local_cxx}"
-    else
-        die "no working C compiler after package install (gcc and clang both failed a trivial compile)"
-    fi
-
-    ensure_dir "$BUILD_ROOT"
-    if [[ "${DOTFILES_DRY_RUN:-0}" == "1" ]]; then
-        log "would build MakeMKV ${MAKEMKV_VERSION} with ${local_cc} in ${BUILD_ROOT}"
-    else
-        run wget -q -O "${BUILD_ROOT}/makemkv-oss.tar.gz" "$OSS_URL"
-        run wget -q -O "${BUILD_ROOT}/makemkv-bin.tar.gz" "$BIN_URL"
-        run rm -rf "${BUILD_ROOT}/makemkv-oss-${MAKEMKV_VERSION}" \
-            "${BUILD_ROOT}/makemkv-bin-${MAKEMKV_VERSION}"
-        run tar -xzf "${BUILD_ROOT}/makemkv-oss.tar.gz" -C "$BUILD_ROOT"
-        run tar -xzf "${BUILD_ROOT}/makemkv-bin.tar.gz" -C "$BUILD_ROOT"
-
-        (
-            cd "${BUILD_ROOT}/makemkv-oss-${MAKEMKV_VERSION}"
-            ./configure --prefix="$MAKEMKV_PREFIX" CC="$CC" CXX="$CXX"
-            make -j"$(nproc)"
-            sudo make install
-        )
-        (
-            cd "${BUILD_ROOT}/makemkv-bin-${MAKEMKV_VERSION}"
-            accept_eula
-            make -j"$(nproc)"
-            sudo make install
-        )
-        sudo mkdir -p "$(dirname "$STAMP")"
-        printf '%s\n' "$MAKEMKV_VERSION" | sudo tee "$STAMP" >/dev/null
-        log "installed MakeMKV ${MAKEMKV_VERSION} with ${local_cc}"
-    fi
+    install_homelab_rpms makemkv
 fi
+remove_unmanaged_makemkv
 
 sync_src="${SETUP_FILES_DIR}/makemkv/sync-makemkv-desktops.sh"
 [[ -f "$sync_src" ]] || die "missing ${sync_src}"
