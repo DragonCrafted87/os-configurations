@@ -142,9 +142,9 @@ while IFS= read -r name || [[ -n "$name" ]]; do
         else
             march="x86-64"
         fi
-        # Installed hyprutils and aquamarine headers include pixman.h and
-        # drm_fourcc.h. Those headers are not on the default search path.
-        dep_cflags="$(pkg-config --cflags pixman-1 libdrm 2>/dev/null || true)"
+        # Installed headers include pixman.h, drm_fourcc.h, and
+        # pipewire/pipewire.h. Those directories are not on the default path.
+        dep_cflags="$(pkg-config --cflags pixman-1 libdrm libpipewire-0.3 2>/dev/null || true)"
         cflags="-O2 -march=${march} ${dep_cflags}"
         # The shim uses string_view. BOINC's configure probes C++11, which
         # fails if that header is forced in.
