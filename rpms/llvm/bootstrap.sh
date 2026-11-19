@@ -97,9 +97,23 @@ configure_llvm() {
     local runtimes="$5"
     shift 5
     local flags
+    local -a archive_tools=()
     flags="$(map_flags "$builddir")"
     if [[ "$cc" != /usr/bin/gcc && "$cc" != gcc ]]; then
         flags="${flags} ${gcc_triple}"
+        # ThinLTO objects are bitcode. Distro llvm-ar 19 cannot read
+        # LLVM 23 bitcode, so the archive tools have to be this stage's
+        # compiler, sitting beside it.
+        local bindir="${cc%/*}"
+        if [[ ! -x "${bindir}/llvm-ar" || ! -x "${bindir}/llvm-ranlib" || ! -x "${bindir}/llvm-nm" ]]; then
+            printf 'compiler %s needs llvm-ar, llvm-ranlib, and llvm-nm beside it\n' "$cc" >&2
+            exit 1
+        fi
+        archive_tools=(
+            -DCMAKE_AR="${bindir}/llvm-ar"
+            -DCMAKE_RANLIB="${bindir}/llvm-ranlib"
+            -DCMAKE_NM="${bindir}/llvm-nm"
+        )
     fi
     cmake -G Ninja -S "${src}/llvm" -B "$builddir" \
         -DCMAKE_BUILD_TYPE=Release \
@@ -121,6 +135,7 @@ configure_llvm() {
         -DLLVM_ENABLE_Z3_SOLVER=OFF \
         -DLLVM_ENABLE_LIBEDIT=OFF \
         -DLLVM_PARALLEL_LINK_JOBS="$link_jobs" \
+        "${archive_tools[@]}" \
         "$@"
 }
 
@@ -159,8 +174,27 @@ if ! have_stage stage1; then
     configure_llvm "$stage1" /usr/bin/gcc /usr/bin/g++ "clang;lld" "compiler-rt" \
         -DLLVM_INCLUDE_TESTS=OFF \
         -DCLANG_INCLUDE_TESTS=OFF
-    build_targets "$stage1" clang lld llvm-profdata
+    build_targets "$stage1" clang lld llvm-profdata llvm-ar llvm-ranlib llvm-nm compiler-rt
     stage_done stage1
+fi
+
+# The instrumented link needs stage 1's profile runtime, and later
+# stages need stage 1's llvm-ar. A resumed stage 1 stamp may predate both.
+profile_lib_present() {
+    local path
+    for path in "${stage1}"/lib/clang/*/lib/*/libclang_rt.profile.a; do
+        [[ -f "$path" ]] && return 0
+    done
+    return 1
+}
+if ! profile_lib_present || [[ ! -x "${stage1}/bin/llvm-ar" || ! -x "${stage1}/bin/llvm-ranlib" || ! -x "${stage1}/bin/llvm-nm" ]]; then
+    stage_start stage1-profile
+    build_targets "$stage1" llvm-ar llvm-ranlib llvm-nm compiler-rt
+    profile_lib_present || {
+        printf 'stage1 did not produce libclang_rt.profile.a\n' >&2
+        exit 1
+    }
+    stage_done stage1-profile
 fi
 
 instrumented="${root}/stage2-instrumented"
@@ -232,6 +266,12 @@ final_extra=(
     -DLLVM_INCLUDE_TESTS=ON
     -DCLANG_INCLUDE_TESTS=ON
     -DRUNTIMES_CMAKE_ARGS=-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON\;-DLLVM_ENABLE_LLD=ON
+    -DLLVM_INSTALL_TOOLCHAIN_ONLY=ON
+)
+toolchain_bins=(
+    llvm-ar llvm-cov llvm-cxxfilt llvm-dwp llvm-nm llvm-objcopy llvm-objdump
+    llvm-profdata llvm-ranlib llvm-readobj llvm-size llvm-strings llvm-strip
+    llvm-symbolizer
 )
 
 stage2="${root}/stage2"
@@ -241,7 +281,7 @@ if ! have_stage stage2; then
         configure_llvm "$stage2" "${stage1}/bin/clang" "${stage1}/bin/clang++" \
         "$final_projects" "$final_runtimes" "${final_extra[@]}"
     PATH="${stage1}/bin:${PATH}" \
-        build_targets "$stage2" clang lld clang-tidy clangd clang-format runtimes
+        build_targets "$stage2" clang lld clang-tidy clangd clang-format runtimes "${toolchain_bins[@]}"
     write_gcc_cfg "${stage2}/bin"
     stage_done stage2
 fi
@@ -254,7 +294,7 @@ if ! have_stage stage3; then
         configure_llvm "$stage3" "${stage2}/bin/clang" "${stage2}/bin/clang++" \
         "$final_projects" "$final_runtimes" "${final_extra[@]}"
     PATH="${stage2}/bin:${PATH}" \
-        build_targets "$stage3" clang lld clang-tidy clangd clang-format runtimes
+        build_targets "$stage3" clang lld clang-tidy clangd clang-format runtimes "${toolchain_bins[@]}"
     write_gcc_cfg "${stage3}/bin"
     stage_done stage3
 fi
