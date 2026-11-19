@@ -102,17 +102,20 @@ configure_llvm() {
     if [[ "$cc" != /usr/bin/gcc && "$cc" != gcc ]]; then
         flags="${flags} ${gcc_triple}"
         # ThinLTO objects are bitcode. Distro llvm-ar 19 cannot read
-        # LLVM 23 bitcode, so the archive tools have to be this stage's
-        # compiler, sitting beside it.
-        local bindir="${cc%/*}"
-        if [[ ! -x "${bindir}/llvm-ar" || ! -x "${bindir}/llvm-ranlib" || ! -x "${bindir}/llvm-nm" ]]; then
-            printf 'compiler %s needs llvm-ar, llvm-ranlib, and llvm-nm beside it\n' "$cc" >&2
+        # LLVM 23 bitcode. Prefer the tools beside this compiler, and
+        # fall back to stage 1 when that compiler did not build them.
+        local ar_dir="${cc%/*}"
+        if [[ ! -x "${ar_dir}/llvm-ar" || ! -x "${ar_dir}/llvm-ranlib" || ! -x "${ar_dir}/llvm-nm" ]]; then
+            ar_dir="${stage1}/bin"
+        fi
+        if [[ ! -x "${ar_dir}/llvm-ar" || ! -x "${ar_dir}/llvm-ranlib" || ! -x "${ar_dir}/llvm-nm" ]]; then
+            printf 'compiler %s needs llvm-ar, llvm-ranlib, and llvm-nm\n' "$cc" >&2
             exit 1
         fi
         archive_tools=(
-            -DCMAKE_AR="${bindir}/llvm-ar"
-            -DCMAKE_RANLIB="${bindir}/llvm-ranlib"
-            -DCMAKE_NM="${bindir}/llvm-nm"
+            -DCMAKE_AR="${ar_dir}/llvm-ar"
+            -DCMAKE_RANLIB="${ar_dir}/llvm-ranlib"
+            -DCMAKE_NM="${ar_dir}/llvm-nm"
         )
     fi
     cmake -G Ninja -S "${src}/llvm" -B "$builddir" \
@@ -232,6 +235,11 @@ if ! have_stage profdata; then
         LLVM_PROFILE_FILE="${root}/prof/%p.profraw" \
         build_targets "$train" clang
     mapfile -d '' profraws < <(find "${root}/prof" -name '*.profraw' -print0)
+    cleaned=()
+    for one in "${profraws[@]}"; do
+        [[ -n "$one" ]] && cleaned+=("$one")
+    done
+    profraws=("${cleaned[@]}")
     [[ "${#profraws[@]}" -gt 0 ]] || {
         printf 'training produced no profraw files\n' >&2
         exit 1
