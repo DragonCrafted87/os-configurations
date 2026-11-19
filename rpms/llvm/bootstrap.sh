@@ -270,8 +270,8 @@ if ! have_stage profdata; then
     stage_done profdata
 fi
 
-final_projects="clang;clang-tools-extra;lld"
-final_runtimes="compiler-rt;libcxx;libcxxabi;libunwind"
+final_projects="clang;clang-tools-extra;lld;lldb;mlir;flang;polly;bolt"
+final_runtimes="compiler-rt;libcxx;libcxxabi;libunwind;openmp"
 final_extra=(
     -DLLVM_ENABLE_LTO=Thin
     -DLLVM_ENABLE_LLD=ON
@@ -283,12 +283,17 @@ final_extra=(
     -DLLVM_INCLUDE_TESTS=ON
     -DCLANG_INCLUDE_TESTS=ON
     -DRUNTIMES_CMAKE_ARGS=-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
-    -DLLVM_INSTALL_TOOLCHAIN_ONLY=ON
+    -DLLVM_INSTALL_TOOLCHAIN_ONLY=OFF
+    -DLLVM_BUILD_LLVM_DYLIB=ON
+    -DLLVM_LINK_LLVM_DYLIB=ON
 )
 toolchain_bins=(
-    llvm-ar llvm-cov llvm-cxxfilt llvm-dwp llvm-nm llvm-objcopy llvm-objdump
-    llvm-profdata llvm-ranlib llvm-readobj llvm-size llvm-strings llvm-strip
-    llvm-symbolizer
+    llvm-ar llvm-config llvm-cov llvm-cxxfilt llvm-dwp llvm-nm llvm-objcopy
+    llvm-objdump llvm-profdata llvm-ranlib llvm-readobj llvm-size llvm-strings
+    llvm-strip llvm-symbolizer
+)
+suite_bins=(
+    lldb flang-new mlir-opt mlir-translate llvm-bolt opt llc
 )
 
 stage2="${root}/stage2"
@@ -305,7 +310,7 @@ if ! have_stage stage2; then
     # LLVM_ENABLE_LLD.
     write_gcc_cfg "${stage2}/bin"
     PATH="${stage1}/bin:${PATH}" \
-        build_targets "$stage2" clang-tidy clangd clang-format runtimes
+        build_targets "$stage2" clang-tidy clangd clang-format runtimes "${suite_bins[@]}"
     stage_done stage2
 fi
 write_gcc_cfg "${stage2}/bin"
@@ -320,7 +325,7 @@ if ! have_stage stage3; then
         build_targets "$stage3" clang lld "${toolchain_bins[@]}"
     write_gcc_cfg "${stage3}/bin"
     PATH="${stage2}/bin:${PATH}" \
-        build_targets "$stage3" clang-tidy clangd clang-format runtimes
+        build_targets "$stage3" clang-tidy clangd clang-format runtimes "${suite_bins[@]}"
     stage_done stage3
 fi
 write_gcc_cfg "${stage3}/bin"
