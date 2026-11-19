@@ -23,6 +23,8 @@ hyprcapture built from the pin in setup/versions.conf. Files install under /usr/
 mkdir -p hyprland-src
 tar -xzf %{SOURCE1} -C hyprland-src --strip-components=1
 python3 %{_sourcedir}/../gcc14-prep.py .
+# Clang rejects gcc's --no-gnu-unique.
+sed -i '/--no-gnu-unique/d' CMakeLists.txt
 %build
 export CC="%{homelab_cc}"
 export CXX="%{homelab_cxx}"

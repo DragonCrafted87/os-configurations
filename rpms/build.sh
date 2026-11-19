@@ -142,10 +142,10 @@ while IFS= read -r name || [[ -n "$name" ]]; do
         else
             march="x86-64"
         fi
-        # hyprutils headers include pixman.h. That header lives in
-        # pixman-1, which is not on the compiler's default search path.
-        pixman_cflags="$(pkg-config --cflags pixman-1 2>/dev/null || true)"
-        cflags="-O2 -march=${march} ${pixman_cflags}"
+        # Installed hyprutils and aquamarine headers include pixman.h and
+        # drm_fourcc.h. Those headers are not on the default search path.
+        dep_cflags="$(pkg-config --cflags pixman-1 libdrm 2>/dev/null || true)"
+        cflags="-O2 -march=${march} ${dep_cflags}"
         # The shim uses string_view. BOINC's configure probes C++11, which
         # fails if that header is forced in.
         if [[ "$name" == "boinc" ]]; then
