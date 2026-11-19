@@ -8,7 +8,7 @@
 
 Name:           homelab-llvm
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        LLVM 23 toolchain built by itself for the homelab prefix
 License:        Apache-2.0 WITH LLVM-exception
