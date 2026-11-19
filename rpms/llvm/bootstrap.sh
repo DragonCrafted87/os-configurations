@@ -76,6 +76,19 @@ map_flags() {
     printf '%s\n' "-march=${march} -ffile-prefix-map=${src}=/llvm-src -ffile-prefix-map=${builddir}=/llvm-stage -fdebug-prefix-map=${src}=/llvm-src -fdebug-prefix-map=${builddir}=/llvm-stage"
 }
 
+# Stage 1 Clang's default triple does not match OpenMandriva's GCC
+# directory, so it never searches /usr/include/c++. The config file is
+# what the installed compiler loads. The same flag is passed while
+# building so CMake's libstdc++ probe sees the headers too.
+gcc_triple="--gcc-triple=x86_64-openmandriva-linux-gnu"
+
+write_gcc_cfg() {
+    local bindir="$1"
+    mkdir -p "$bindir"
+    printf '%s\n' "$gcc_triple" >"${bindir}/clang.cfg"
+    printf '%s\n' "$gcc_triple" >"${bindir}/clang++.cfg"
+}
+
 configure_llvm() {
     local builddir="$1"
     local cc="$2"
@@ -85,6 +98,9 @@ configure_llvm() {
     shift 5
     local flags
     flags="$(map_flags "$builddir")"
+    if [[ "$cc" != /usr/bin/gcc && "$cc" != gcc ]]; then
+        flags="${flags} ${gcc_triple}"
+    fi
     cmake -G Ninja -S "${src}/llvm" -B "$builddir" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_C_COMPILER="$cc" \
@@ -137,6 +153,7 @@ if ! have_stage source; then
 fi
 
 stage1="${root}/stage1"
+write_gcc_cfg "${stage1}/bin"
 if ! have_stage stage1; then
     stage_start stage1
     configure_llvm "$stage1" /usr/bin/gcc /usr/bin/g++ "clang;lld" "compiler-rt" \
@@ -159,8 +176,10 @@ if ! have_stage stage2-instrumented; then
         -DLLVM_INCLUDE_TESTS=OFF \
         -DCLANG_INCLUDE_TESTS=OFF
     PATH="${stage1}/bin:${PATH}" build_targets "$instrumented" clang lld
+    write_gcc_cfg "${instrumented}/bin"
     stage_done stage2-instrumented
 fi
+write_gcc_cfg "${instrumented}/bin"
 
 profdata="${root}/clang.profdata"
 if ! have_stage profdata; then
@@ -223,8 +242,10 @@ if ! have_stage stage2; then
         "$final_projects" "$final_runtimes" "${final_extra[@]}"
     PATH="${stage1}/bin:${PATH}" \
         build_targets "$stage2" clang lld clang-tidy clangd clang-format runtimes
+    write_gcc_cfg "${stage2}/bin"
     stage_done stage2
 fi
+write_gcc_cfg "${stage2}/bin"
 
 stage3="${root}/stage3"
 if ! have_stage stage3; then
@@ -234,8 +255,10 @@ if ! have_stage stage3; then
         "$final_projects" "$final_runtimes" "${final_extra[@]}"
     PATH="${stage2}/bin:${PATH}" \
         build_targets "$stage3" clang lld clang-tidy clangd clang-format runtimes
+    write_gcc_cfg "${stage3}/bin"
     stage_done stage3
 fi
+write_gcc_cfg "${stage3}/bin"
 
 compare_one() {
     local rel="$1"
@@ -281,6 +304,7 @@ if ! have_stage install; then
     rm -rf "$destdir"
     mkdir -p "$destdir"
     DESTDIR="$destdir" cmake --install "$stage3"
+    write_gcc_cfg "${destdir}${prefix}/bin"
     [[ -x "${destdir}${prefix}/bin/clang" ]] || {
         printf 'install missing %s\n' "${destdir}${prefix}/bin/clang" >&2
         exit 1
