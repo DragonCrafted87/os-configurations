@@ -273,7 +273,7 @@ final_extra=(
     -DLLVM_PROFDATA_FILE="$profdata"
     -DLLVM_INCLUDE_TESTS=ON
     -DCLANG_INCLUDE_TESTS=ON
-    -DRUNTIMES_CMAKE_ARGS=-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON\;-DLLVM_ENABLE_LLD=ON
+    -DRUNTIMES_CMAKE_ARGS=-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
     -DLLVM_INSTALL_TOOLCHAIN_ONLY=ON
 )
 toolchain_bins=(
@@ -289,8 +289,14 @@ if ! have_stage stage2; then
         configure_llvm "$stage2" "${stage1}/bin/clang" "${stage1}/bin/clang++" \
         "$final_projects" "$final_runtimes" "${final_extra[@]}"
     PATH="${stage1}/bin:${PATH}" \
-        build_targets "$stage2" clang lld clang-tidy clangd clang-format runtimes "${toolchain_bins[@]}"
+        build_targets "$stage2" clang lld "${toolchain_bins[@]}"
+    # The runtime build invokes this clang before ninja returns, so the
+    # OpenMandriva config has to exist first. The runtime project sets
+    # LLVM_USE_LINKER itself, so RUNTIMES_CMAKE_ARGS must not also set
+    # LLVM_ENABLE_LLD.
     write_gcc_cfg "${stage2}/bin"
+    PATH="${stage1}/bin:${PATH}" \
+        build_targets "$stage2" clang-tidy clangd clang-format runtimes
     stage_done stage2
 fi
 write_gcc_cfg "${stage2}/bin"
@@ -302,8 +308,10 @@ if ! have_stage stage3; then
         configure_llvm "$stage3" "${stage2}/bin/clang" "${stage2}/bin/clang++" \
         "$final_projects" "$final_runtimes" "${final_extra[@]}"
     PATH="${stage2}/bin:${PATH}" \
-        build_targets "$stage3" clang lld clang-tidy clangd clang-format runtimes "${toolchain_bins[@]}"
+        build_targets "$stage3" clang lld "${toolchain_bins[@]}"
     write_gcc_cfg "${stage3}/bin"
+    PATH="${stage2}/bin:${PATH}" \
+        build_targets "$stage3" clang-tidy clangd clang-format runtimes
     stage_done stage3
 fi
 write_gcc_cfg "${stage3}/bin"
