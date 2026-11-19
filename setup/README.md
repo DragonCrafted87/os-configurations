@@ -476,8 +476,9 @@ adb shell am force-stop org.kde.kdeconnect_tp
 `install-makemkv` is on workstation (and therefore laptop). It exits
 immediately if no optical drive is present (`/dev/sr*` with
 `ID_CDROM=1`). Otherwise it builds MakeMKV 1.18.4 from the official
-oss+bin tarballs using `clang`/`clang++` and `lld`, against distro
-ffmpeg/Qt5 devel packages. Override the version with
+oss+bin tarballs with `/usr/local/bin/clang` when homelab-llvm is
+installed, and with gcc otherwise, against distro ffmpeg/Qt5 devel
+packages. Override the version with
 `MAKEMKV_VERSION=1.18.4`.
 
 Login autostart runs `~/bin/sync-makemkv-desktops.sh`, which writes one

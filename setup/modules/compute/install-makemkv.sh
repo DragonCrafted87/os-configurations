@@ -45,9 +45,6 @@ install_build_deps() {
     local picked
     local group
     local groups=(
-        "clang"
-        "llvm"
-        "lld"
         "gcc"
         "gcc-c++ gcc-c++-x86_64 gcc-c++-znver1"
         "glibc-devel lib64c-devel"
@@ -92,8 +89,9 @@ compiler_works() {
 }
 
 pick_compilers() {
-    if compiler_works clang && command -v clang++ >/dev/null 2>&1; then
-        printf '%s %s\n' clang clang++
+    if [[ -x /usr/local/bin/clang && -x /usr/local/bin/clang++ ]] \
+        && compiler_works /usr/local/bin/clang; then
+        printf '%s %s\n' /usr/local/bin/clang /usr/local/bin/clang++
         return 0
     fi
     if compiler_works gcc && command -v g++ >/dev/null 2>&1; then
