@@ -85,8 +85,17 @@ gcc_triple="--gcc-triple=x86_64-openmandriva-linux-gnu"
 write_gcc_cfg() {
     local bindir="$1"
     mkdir -p "$bindir"
-    printf '%s\n' "$gcc_triple" >"${bindir}/clang.cfg"
-    printf '%s\n' "$gcc_triple" >"${bindir}/clang++.cfg"
+    # These are the installed compiler's defaults. Compiling them into
+    # the driver makes z/OS unit tests abort and changes bare-metal
+    # driver output, so the test run sets CLANG_NO_DEFAULT_CONFIG.
+    printf '%s\n' \
+        "$gcc_triple" \
+        "-stdlib=libstdc++" \
+        "-rtlib=libgcc" \
+        "-unwindlib=libgcc" \
+        "-fuse-ld=lld" \
+        >"${bindir}/clang.cfg"
+    cp "${bindir}/clang.cfg" "${bindir}/clang++.cfg"
 }
 
 configure_llvm() {
@@ -267,9 +276,9 @@ final_extra=(
     -DLLVM_ENABLE_LTO=Thin
     -DLLVM_ENABLE_LLD=ON
     -DLLVM_ENABLE_FATLTO=OFF
-    -DCLANG_DEFAULT_LINKER=lld
-    -DCLANG_DEFAULT_CXX_STDLIB=libstdc++
-    -DCLANG_DEFAULT_RTLIB=libgcc
+    -DCLANG_DEFAULT_LINKER=
+    -DCLANG_DEFAULT_CXX_STDLIB=
+    -DCLANG_DEFAULT_RTLIB=
     -DLLVM_PROFDATA_FILE="$profdata"
     -DLLVM_INCLUDE_TESTS=ON
     -DCLANG_INCLUDE_TESTS=ON
@@ -349,7 +358,8 @@ fi
 
 if ! have_stage tests; then
     stage_start tests
-    PATH="${stage3}/bin:${PATH}" \
+    CLANG_NO_DEFAULT_CONFIG=1 \
+        PATH="${stage3}/bin:${PATH}" \
         build_targets "$stage3" check-clang check-llvm
     stage_done tests
 fi
