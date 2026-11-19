@@ -58,19 +58,6 @@ cmake --build build --config Release -j"$(nproc)"
 
 %install
 DESTDIR=%{buildroot} cmake --install build
-# The distro library has no iniparser.pc. The source role writes this one.
-mkdir -p %{buildroot}%{_prefix}/lib64/pkgconfig
-cat > %{buildroot}%{_prefix}/lib64/pkgconfig/iniparser.pc <<'EOF'
-prefix=/usr
-exec_prefix=${prefix}
-libdir=/usr/lib64
-includedir=/usr/include/iniparser
-Name: iniparser
-Description: INI file parser
-Version: 4.2.1
-Libs: -L${libdir} -liniparser
-Cflags: -I${includedir} -I/usr/include
-EOF
 find %{buildroot} -name '*.la' -delete
 find %{buildroot} \( -type f -o -type l \) -printf '"%p"\n' | sed 's|"%{buildroot}|"|' > %{_builddir}/%{name}.files
 %files -f %{_builddir}/%{name}.files
