@@ -293,7 +293,7 @@ toolchain_bins=(
     llvm-strip llvm-symbolizer
 )
 suite_bins=(
-    lldb flang-new mlir-opt mlir-translate llvm-bolt opt llc
+    lldb flang mlir-opt mlir-translate llvm-bolt opt llc LLVMPolly
 )
 
 stage2="${root}/stage2"
