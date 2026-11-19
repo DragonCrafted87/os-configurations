@@ -385,14 +385,45 @@ fi
 destdir="${root}/destdir"
 if ! have_stage install; then
     stage_start install
-    # clang-tools-extra and the remarks library have install rules even
-    # when the earlier targets did not build them.
-    PATH="${stage3}/bin:${PATH}" \
-        build_targets "$stage3" \
-        clang-apply-replacements clang-change-namespace clang-doc \
-        clang-include-cleaner clang-include-fixer clang-move clang-query \
-        clang-reorder-fields find-all-symbols modularize offload-arch \
-        pp-trace Remarks
+    # The install rules name MLIR, Flang, and LLDB outputs that the
+    # earlier target list did not build.
+    mapfile -t pending < <(python3 - "$stage3" <<'PY'
+import os, re, subprocess, sys
+root = sys.argv[1]
+missing = set()
+for dirpath, _, files in os.walk(root):
+    if "cmake_install.cmake" not in files or "/runtimes/" in dirpath:
+        continue
+    text = open(os.path.join(dirpath, "cmake_install.cmake"), errors="replace").read()
+    for match in re.finditer(r'"(' + re.escape(root) + r'/[^"]+)"', text):
+        path = match.group(1)
+        base = os.path.basename(path)
+        if os.path.exists(path):
+            continue
+        if base.startswith("lib") and base.endswith(".a"):
+            missing.add(base[3:-2])
+        elif base.startswith("lib") and ".so" in base:
+            missing.add(base.split(".so")[0][3:])
+        elif "/bin/" in path:
+            missing.add(base)
+if not missing:
+    raise SystemExit
+known = set()
+listed = subprocess.check_output(["ninja", "-C", root, "-t", "targets", "all"], text=True)
+for line in listed.splitlines():
+    known.add(line.split(":", 1)[0])
+for name in sorted(missing & known):
+    print(name)
+PY
+    )
+    if ((${#pending[@]})); then
+        PATH="${stage3}/bin:${PATH}" \
+            build_targets "$stage3" "${pending[@]}" \
+            clang-apply-replacements clang-change-namespace clang-doc \
+            clang-include-cleaner clang-include-fixer clang-move clang-query \
+            clang-reorder-fields find-all-symbols modularize offload-arch \
+            pp-trace Remarks
+    fi
     rm -rf "$destdir"
     mkdir -p "$destdir"
     DESTDIR="$destdir" cmake --install "$stage3"
