@@ -345,6 +345,19 @@ compare_one() {
         printf 'compare match %s\n' "$rel"
         return 0
     fi
+    # RUNPATH records the build directory. stage2 and stage3 differ only
+    # by that path when the compilers themselves match.
+    if python3 - "$left" "$right" "$stage2" "$stage3" <<'PY'
+import pathlib, sys
+left, right, stage2, stage3 = sys.argv[1:]
+a = pathlib.Path(left).read_bytes().replace(stage2.encode(), b"STAGE")
+b = pathlib.Path(right).read_bytes().replace(stage3.encode(), b"STAGE")
+sys.exit(0 if a == b else 1)
+PY
+    then
+        printf 'compare match %s\n' "$rel"
+        return 0
+    fi
     printf 'compare differ %s\n' "$rel" >&2
     return 1
 }
