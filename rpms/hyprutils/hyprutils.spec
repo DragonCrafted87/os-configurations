@@ -44,6 +44,10 @@ cmake --build build --config Release -j"$(nproc)"
 
 %install
 DESTDIR=%{buildroot} cmake --install build
+# Region.hpp includes pixman.h, so dependents need that include path.
+pixman_cflags="$(pkg-config --cflags pixman-1)"
+sed -i "s|^Cflags:.*|& ${pixman_cflags}|" %{buildroot}%{_prefix}/lib64/pkgconfig/hyprutils.pc
+printf 'Requires.private: pixman-1\n' >> %{buildroot}%{_prefix}/lib64/pkgconfig/hyprutils.pc
 find %{buildroot} -name '*.la' -delete
 find %{buildroot} \( -type f -o -type l \) -printf '"%p"\n' | sed 's|"%{buildroot}|"|' > %{_builddir}/%{name}.files
 %files -f %{_builddir}/%{name}.files

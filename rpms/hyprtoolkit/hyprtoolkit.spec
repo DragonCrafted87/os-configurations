@@ -35,7 +35,7 @@ Name: iniparser
 Description: ini file parser
 Version: 4.2.1
 Libs: -L${libdir} -liniparser
-Cflags: -I${includedir}
+Cflags: -I${includedir}/iniparser
 EOF
 export PKG_CONFIG_PATH="$PWD/iniparser-pkgconfig:%{_prefix}/lib64/pkgconfig:%{_prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 export LIBRARY_PATH="%{_prefix}/lib64:%{_prefix}/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"

@@ -142,7 +142,10 @@ while IFS= read -r name || [[ -n "$name" ]]; do
         else
             march="x86-64"
         fi
-        cflags="-O2 -march=${march}"
+        # hyprutils headers include pixman.h. That header lives in
+        # pixman-1, which is not on the compiler's default search path.
+        pixman_cflags="$(pkg-config --cflags pixman-1 2>/dev/null || true)"
+        cflags="-O2 -march=${march} ${pixman_cflags}"
         # The shim uses string_view. BOINC's configure probes C++11, which
         # fails if that header is forced in.
         if [[ "$name" == "boinc" ]]; then
@@ -150,7 +153,9 @@ while IFS= read -r name || [[ -n "$name" ]]; do
         else
             cxxflags="${cflags} -include ${root}/string_view_concat.hpp"
         fi
-        rpm_file="${out}/${arch}/${rpm_name}-${version}-1.${arch}.rpm"
+        release="$(awk '/^Release:/ { print $2; exit }' "$spec")"
+        release="${release:-1}"
+        rpm_file="${out}/${arch}/${rpm_name}-${version}-${release}.${arch}.rpm"
         top="${out}/top/${name}-${arch}"
         cmd=(
             rpmbuild -bb
