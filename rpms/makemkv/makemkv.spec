@@ -4,7 +4,7 @@
 
 Name:           makemkv
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        MakeMKV for the homelab /usr/local prefix
 License:        GPL-2.0-or-later AND LicenseRef-MakeMKV-EULA
@@ -40,5 +40,11 @@ mkdir -p ../makemkv-bin-%{pkg_version}/tmp
 printf 'accepted\n' > ../makemkv-bin-%{pkg_version}/tmp/eula_accepted
 make -C ../makemkv-bin-%{pkg_version} install DESTDIR=%{buildroot} PREFIX=%{_prefix}
 find %{buildroot} \( -type f -o -type l \) -printf '"%p"\n' | sed 's|"%{buildroot}|"|' > %{_builddir}/%{name}.files
+
+%post
+/sbin/ldconfig
+
+%postun
+/sbin/ldconfig
 
 %files -f %{_builddir}/%{name}.files
