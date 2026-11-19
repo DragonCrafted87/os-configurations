@@ -1,3 +1,4 @@
+llvm
 wayland-protocols
 libxkbcommon
 libinput

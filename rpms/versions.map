@@ -1,6 +1,7 @@
 # name  versions.conf key  transform
 # transform is strip_v, xkb, full, or fixed:VERSION.
 # A hyphen in that version becomes a dot. RPM versions cannot contain one.
+llvm LLVM_TAG llvmorg
 wayland-protocols WAYLAND_PROTOCOLS_TAG strip_v
 libxkbcommon LIBXKBCOMMON_TAG xkb
 libinput LIBINPUT_TAG strip_v

@@ -4,14 +4,14 @@
 
 Name:           hyprsunset
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        hyprsunset for the homelab /usr/local prefix
 License:        BSD-3-Clause
 URL:            https://github.com/hyprwm/hyprsunset
 Source0:        https://github.com/hyprwm/hyprsunset/archive/refs/tags/%{pkg_tag}.tar.gz
 Patch0:         systemd-user-unit-dir.patch
-BuildRequires:  cmake gcc gcc-c++ pkgconf make
+BuildRequires:  cmake homelab-llvm pkgconf make
 Requires:       hyprutils
 
 %description

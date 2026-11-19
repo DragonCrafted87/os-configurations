@@ -1,0 +1,291 @@
+#!/usr/bin/env bash
+# Stage 3 is the compiler that gets installed. Stage 1 is built by the
+# host compiler. An instrumented Clang then compiles Clang to produce the
+# IR profile. Stage 2 and stage 3 both apply that profile with ThinLTO.
+# Stage 3 is built by stage 2, so the installed compiler was built by Clang.
+# Shipping waits until stage 2 and stage 3 clang and lld match, and until
+# check-clang and check-llvm pass on stage 3.
+set -euo pipefail
+
+tag=""
+prefix="/usr/local"
+march="znver1"
+
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        --tag)
+            tag="$2"
+            shift 2
+            ;;
+        --prefix)
+            prefix="$2"
+            shift 2
+            ;;
+        --march)
+            march="$2"
+            shift 2
+            ;;
+        *)
+            printf 'unknown argument: %s\n' "$1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+[[ -n "$tag" ]] || {
+    printf 'missing --tag\n' >&2
+    exit 2
+}
+version="${tag#llvmorg-}"
+root="${HOMELAB_LLVM_BUILD:-${HOME}/builds/homelab-llvm/${version}}"
+src="${root}/src/llvm-project-${version}.src"
+url="https://github.com/llvm/llvm-project/releases/download/${tag}/llvm-project-${version}.src.tar.xz"
+log="${root}/bootstrap.log"
+compile_jobs="${HOMELAB_LLVM_JOBS:-16}"
+link_jobs="${HOMELAB_LLVM_LINK_JOBS:-1}"
+
+mkdir -p "$root"
+printf '%s\n' "$$" >"${root}/bootstrap.pid"
+exec 9>"${root}/bootstrap.lock"
+flock -n 9 || {
+    printf 'bootstrap already running for %s\n' "$root" >&2
+    exit 1
+}
+
+if [[ -z "${HOMELAB_LLVM_LOGGING:-}" ]]; then
+    export HOMELAB_LLVM_LOGGING=1
+    exec > >(tee -a "$log") 2>&1
+fi
+
+stage_start() {
+    printf 'STAGE start %s\n' "$1"
+}
+
+stage_done() {
+    mkdir -p "${root}/stamps"
+    date -Is >"${root}/stamps/$1"
+    printf 'STAGE done %s\n' "$1"
+}
+
+have_stage() {
+    [[ -f "${root}/stamps/$1" ]]
+}
+
+map_flags() {
+    local builddir="$1"
+    printf '%s\n' "-march=${march} -ffile-prefix-map=${src}=/llvm-src -ffile-prefix-map=${builddir}=/llvm-stage -fdebug-prefix-map=${src}=/llvm-src -fdebug-prefix-map=${builddir}=/llvm-stage"
+}
+
+configure_llvm() {
+    local builddir="$1"
+    local cc="$2"
+    local cxx="$3"
+    local projects="$4"
+    local runtimes="$5"
+    shift 5
+    local flags
+    flags="$(map_flags "$builddir")"
+    cmake -G Ninja -S "${src}/llvm" -B "$builddir" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_C_COMPILER="$cc" \
+        -DCMAKE_CXX_COMPILER="$cxx" \
+        -DCMAKE_INSTALL_PREFIX="$prefix" \
+        -DCMAKE_INSTALL_LIBDIR=lib64 \
+        -DCMAKE_C_FLAGS="$flags" \
+        -DCMAKE_CXX_FLAGS="$flags" \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        -DLLVM_APPEND_VC_REV=OFF \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_TARGETS_TO_BUILD=X86 \
+        -DLLVM_ENABLE_PROJECTS="$projects" \
+        -DLLVM_ENABLE_RUNTIMES="$runtimes" \
+        -DLLVM_ENABLE_BINDINGS=OFF \
+        -DLLVM_INCLUDE_BENCHMARKS=OFF \
+        -DLLVM_INCLUDE_EXAMPLES=OFF \
+        -DLLVM_ENABLE_Z3_SOLVER=OFF \
+        -DLLVM_ENABLE_LIBEDIT=OFF \
+        -DLLVM_PARALLEL_LINK_JOBS="$link_jobs" \
+        "$@"
+}
+
+build_targets() {
+    local builddir="$1"
+    shift
+    local args=()
+    local target
+    for target in "$@"; do
+        args+=(--target "$target")
+    done
+    cmake --build "$builddir" --parallel "$compile_jobs" "${args[@]}"
+}
+
+if ! have_stage source; then
+    stage_start source
+    tarball="${root}/llvm-project-${version}.src.tar.xz"
+    if [[ ! -f "$tarball" ]]; then
+        curl -fL --retry 3 -o "$tarball" "$url"
+    fi
+    if [[ ! -f "${src}/llvm/CMakeLists.txt" ]]; then
+        mkdir -p "${root}/src"
+        tar -xJf "$tarball" -C "${root}/src"
+    fi
+    [[ -f "${src}/llvm/CMakeLists.txt" ]] || {
+        printf 'source tree missing %s\n' "${src}/llvm/CMakeLists.txt" >&2
+        exit 1
+    }
+    stage_done source
+fi
+
+stage1="${root}/stage1"
+if ! have_stage stage1; then
+    stage_start stage1
+    configure_llvm "$stage1" /usr/bin/gcc /usr/bin/g++ "clang;lld" "compiler-rt" \
+        -DLLVM_INCLUDE_TESTS=OFF \
+        -DCLANG_INCLUDE_TESTS=OFF
+    build_targets "$stage1" clang lld llvm-profdata
+    stage_done stage1
+fi
+
+instrumented="${root}/stage2-instrumented"
+if ! have_stage stage2-instrumented; then
+    stage_start stage2-instrumented
+    PATH="${stage1}/bin:${PATH}" \
+        configure_llvm "$instrumented" "${stage1}/bin/clang" "${stage1}/bin/clang++" \
+        "clang;lld" "compiler-rt" \
+        -DLLVM_BUILD_INSTRUMENTED=IR \
+        -DLLVM_ENABLE_LTO=Thin \
+        -DLLVM_ENABLE_LLD=ON \
+        -DCLANG_DEFAULT_LINKER=lld \
+        -DLLVM_INCLUDE_TESTS=OFF \
+        -DCLANG_INCLUDE_TESTS=OFF
+    PATH="${stage1}/bin:${PATH}" build_targets "$instrumented" clang lld
+    stage_done stage2-instrumented
+fi
+
+profdata="${root}/clang.profdata"
+if ! have_stage profdata; then
+    stage_start profdata
+    train="${root}/train"
+    rm -rf "${root}/prof" "$train"
+    mkdir -p "${root}/prof"
+    PATH="${instrumented}/bin:${stage1}/bin:${PATH}" \
+        LLVM_PROFILE_FILE="${root}/prof/%p.profraw" \
+        configure_llvm "$train" "${instrumented}/bin/clang" "${instrumented}/bin/clang++" \
+        "clang" "" \
+        -DLLVM_INCLUDE_TESTS=OFF \
+        -DCLANG_INCLUDE_TESTS=OFF \
+        -DLLVM_BUILD_TOOLS=OFF
+    PATH="${instrumented}/bin:${stage1}/bin:${PATH}" \
+        LLVM_PROFILE_FILE="${root}/prof/%p.profraw" \
+        build_targets "$train" clang
+    mapfile -d '' profraws < <(find "${root}/prof" -name '*.profraw' -print0)
+    [[ "${#profraws[@]}" -gt 0 ]] || {
+        printf 'training produced no profraw files\n' >&2
+        exit 1
+    }
+    merged="${root}/prof-merged"
+    rm -rf "$merged"
+    mkdir -p "$merged"
+    batch=300
+    index=0
+    part=0
+    while [[ "$index" -lt "${#profraws[@]}" ]]; do
+        "${stage1}/bin/llvm-profdata" merge -sparse \
+            -output="${merged}/part-${part}.profdata" \
+            "${profraws[@]:index:batch}"
+        index=$((index + batch))
+        part=$((part + 1))
+    done
+    "${stage1}/bin/llvm-profdata" merge -sparse -output="$profdata" "${merged}"/*.profdata
+    stage_done profdata
+fi
+
+final_projects="clang;clang-tools-extra;lld"
+final_runtimes="compiler-rt;libcxx;libcxxabi;libunwind"
+final_extra=(
+    -DLLVM_ENABLE_LTO=Thin
+    -DLLVM_ENABLE_LLD=ON
+    -DLLVM_ENABLE_FATLTO=OFF
+    -DCLANG_DEFAULT_LINKER=lld
+    -DCLANG_DEFAULT_CXX_STDLIB=libstdc++
+    -DCLANG_DEFAULT_RTLIB=libgcc
+    -DLLVM_PROFDATA_FILE="$profdata"
+    -DLLVM_INCLUDE_TESTS=ON
+    -DCLANG_INCLUDE_TESTS=ON
+    -DRUNTIMES_CMAKE_ARGS=-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON\;-DLLVM_ENABLE_LLD=ON
+)
+
+stage2="${root}/stage2"
+if ! have_stage stage2; then
+    stage_start stage2
+    PATH="${stage1}/bin:${PATH}" \
+        configure_llvm "$stage2" "${stage1}/bin/clang" "${stage1}/bin/clang++" \
+        "$final_projects" "$final_runtimes" "${final_extra[@]}"
+    PATH="${stage1}/bin:${PATH}" \
+        build_targets "$stage2" clang lld clang-tidy clangd clang-format runtimes
+    stage_done stage2
+fi
+
+stage3="${root}/stage3"
+if ! have_stage stage3; then
+    stage_start stage3
+    PATH="${stage2}/bin:${PATH}" \
+        configure_llvm "$stage3" "${stage2}/bin/clang" "${stage2}/bin/clang++" \
+        "$final_projects" "$final_runtimes" "${final_extra[@]}"
+    PATH="${stage2}/bin:${PATH}" \
+        build_targets "$stage3" clang lld clang-tidy clangd clang-format runtimes
+    stage_done stage3
+fi
+
+compare_one() {
+    local rel="$1"
+    local left="${stage2}/${rel}"
+    local right="${stage3}/${rel}"
+    if [[ ! -e "$left" && ! -e "$right" ]]; then
+        return 0
+    fi
+    if [[ ! -e "$left" || ! -e "$right" ]]; then
+        printf 'compare missing %s\n' "$rel" >&2
+        return 1
+    fi
+    if cmp -s "$left" "$right"; then
+        printf 'compare match %s\n' "$rel"
+        return 0
+    fi
+    printf 'compare differ %s\n' "$rel" >&2
+    return 1
+}
+
+if ! have_stage compare; then
+    stage_start compare
+    compare_ok=0
+    compare_one "bin/clang" || compare_ok=1
+    compare_one "bin/clang++" || compare_ok=1
+    compare_one "bin/clang-${version%%.*}" || compare_ok=1
+    compare_one "bin/lld" || compare_ok=1
+    compare_one "bin/ld.lld" || compare_ok=1
+    [[ "$compare_ok" -eq 0 ]] || exit 1
+    stage_done compare
+fi
+
+if ! have_stage tests; then
+    stage_start tests
+    PATH="${stage3}/bin:${PATH}" \
+        build_targets "$stage3" check-clang check-llvm
+    stage_done tests
+fi
+
+destdir="${root}/destdir"
+if ! have_stage install; then
+    stage_start install
+    rm -rf "$destdir"
+    mkdir -p "$destdir"
+    DESTDIR="$destdir" cmake --install "$stage3"
+    [[ -x "${destdir}${prefix}/bin/clang" ]] || {
+        printf 'install missing %s\n' "${destdir}${prefix}/bin/clang" >&2
+        exit 1
+    }
+    stage_done install
+fi
+
+printf 'STAGE done bootstrap\n'

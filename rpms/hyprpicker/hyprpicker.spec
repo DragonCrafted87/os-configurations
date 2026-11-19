@@ -4,13 +4,13 @@
 
 Name:           hyprpicker
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        hyprpicker for the homelab /usr/local prefix
 License:        BSD-3-Clause
 URL:            https://github.com/hyprwm/hyprpicker
 Source0:        https://github.com/hyprwm/hyprpicker/archive/refs/tags/%{pkg_tag}.tar.gz
-BuildRequires:  cmake gcc gcc-c++ pkgconf make
+BuildRequires:  cmake homelab-llvm pkgconf make
 Requires:       hyprutils
 
 %description

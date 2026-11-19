@@ -4,7 +4,7 @@
 
 Name:           hyprland
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        hyprland for the homelab /usr/local prefix
 License:        BSD-3-Clause
@@ -14,7 +14,7 @@ Source1:        hyprland.desktop
 Source2:        hyprland-local.conf
 Source3:        iniparser.pc
 Patch0:         hyprland-gcc14.patch
-BuildRequires:  cmake gcc gcc-c++ pkgconf make mold python
+BuildRequires:  cmake homelab-llvm pkgconf make mold python
 Requires:       aquamarine hyprlang hyprutils hyprcursor hyprgraphics hyprland-protocols hyprwayland-scanner hyprwire hyprtoolkit homelab-libxkbcommon homelab-libinput re2 glaze wayland-protocols xcb-errors
 
 %description

@@ -17,10 +17,18 @@ while IFS= read -r name || [[ -n "$name" ]]; do
     name="${name%%#*}"
     name="${name#"${name%%[![:space:]]*}"}"
     [[ -z "$name" ]] && continue
-    grep -F -- "--target x86_64 ${name} " <<<"$out" >/dev/null \
-        || fail "dry-run missed x86_64 for ${name}"
-    grep -F -- "--target znver1 ${name} " <<<"$out" >/dev/null \
-        || fail "dry-run missed znver1 for ${name}"
+    expect="x86_64 znver1"
+    if [[ -f "${repo}/rpms/${name}/arches" ]]; then
+        expect="$(grep -v '^[[:space:]]*#' "${repo}/rpms/${name}/arches" | awk 'NF { printf "%s ", $1 }')"
+    fi
+    for arch in x86_64 znver1; do
+        if [[ " ${expect} " == *" ${arch} "* ]]; then
+            grep -F -- "--target ${arch} ${name} " <<<"$out" >/dev/null \
+                || fail "dry-run missed ${arch} for ${name}"
+        elif grep -F -- "--target ${arch} ${name} " <<<"$out" >/dev/null; then
+            fail "dry-run built ${arch} for ${name}"
+        fi
+    done
 done <"$packages"
 grep -F 'rpmbuild' <<<"$out" >/dev/null || fail "dry-run did not name rpmbuild"
 grep -E 'cmake|meson|configure' <<<"$out" && fail "dry-run compiled a project"

@@ -4,7 +4,7 @@
 
 Name:           hyprcapture
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        hyprcapture for the homelab /usr/local prefix
 License:        GPL-3.0-or-later
@@ -12,7 +12,7 @@ URL:            https://github.com/gfhdhytghd/HyprCapture
 Source0:        https://github.com/gfhdhytghd/HyprCapture/archive/%{pkg_tag}.tar.gz
 Source1:        https://github.com/hyprwm/Hyprland/releases/download/v%{hyprland_version}/source-v%{hyprland_version}.tar.gz
 Patch0:         layershell.patch
-BuildRequires:  cmake gcc gcc-c++ pkgconf make hyprland
+BuildRequires:  cmake homelab-llvm pkgconf make hyprland
 Requires:       hyprland
 
 %description

@@ -4,13 +4,13 @@
 
 Name:           hyprdesk
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        hyprdesk for the homelab /usr/local prefix
 License:        MIT
 URL:            hyprdesk.tar.gz
 Source0:        hyprdesk.tar.gz
-BuildRequires:  cmake gcc gcc-c++ pkgconf make hyprtoolkit
+BuildRequires:  cmake homelab-llvm pkgconf make hyprtoolkit
 Requires:       hyprtoolkit
 
 %description

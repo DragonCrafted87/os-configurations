@@ -4,14 +4,14 @@
 
 Name:           hyprtoolkit
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        hyprtoolkit for the homelab /usr/local prefix
 License:        BSD-3-Clause
 URL:            https://github.com/hyprwm/hyprtoolkit
 Source0:        https://github.com/hyprwm/hyprtoolkit/archive/refs/tags/%{pkg_tag}.tar.gz
 Patch0:         libstdcxx-format.patch
-BuildRequires:  cmake gcc gcc-c++ pkgconf make
+BuildRequires:  cmake homelab-llvm pkgconf make
 Requires:       hyprutils hyprlang
 
 %description

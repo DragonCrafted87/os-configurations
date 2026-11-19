@@ -71,6 +71,7 @@ rpm_version() {
     case "$transform" in
         strip_v) version="${tag#v}" ;;
         xkb) version="${tag#xkbcommon-}" ;;
+        llvmorg) version="${tag#llvmorg-}" ;;
         full) version="${tag#v}" ;;
         fixed:*) version="${transform#fixed:}" ;;
         *)
@@ -107,7 +108,13 @@ while IFS= read -r name || [[ -n "$name" ]]; do
     }
     rpm_name="$(awk '/^Name:/ { print $2; exit }' "$spec")"
     [[ -n "$rpm_name" ]] || rpm_name="$name"
-    if [[ "$name" == "boinc" ]]; then
+    # homelab-llvm's clang is the compiler once it is installed. The LLVM
+    # package itself bootstraps from the host gcc. Until that package is
+    # installed, BOINC stays on the distro clang and the rest stay on gcc.
+    if [[ -x /usr/local/bin/clang && "$name" != "llvm" ]]; then
+        cc="/usr/local/bin/clang"
+        cxx="/usr/local/bin/clang++"
+    elif [[ "$name" == "boinc" ]]; then
         cc="clang"
         cxx="clang++"
     else
@@ -117,7 +124,19 @@ while IFS= read -r name || [[ -n "$name" ]]; do
     if [[ "$dry" -eq 0 && "$name" == "hyprdesk" ]]; then
         tar -C "${repo}/setup/files" -czf "${root}/hyprdesk/hyprdesk.tar.gz" hyprdesk
     fi
-    for arch in x86_64 znver1; do
+    arch_list=()
+    if [[ -f "${root}/${name}/arches" ]]; then
+        while IFS= read -r arch_line || [[ -n "$arch_line" ]]; do
+            arch_line="${arch_line%%#*}"
+            arch_line="${arch_line#"${arch_line%%[![:space:]]*}"}"
+            arch_line="${arch_line%"${arch_line##*[![:space:]]}"}"
+            [[ -z "$arch_line" ]] && continue
+            arch_list+=("$arch_line")
+        done <"${root}/${name}/arches"
+    else
+        arch_list=(x86_64 znver1)
+    fi
+    for arch in "${arch_list[@]}"; do
         if [[ "$arch" == "znver1" ]]; then
             march="znver1"
         else
