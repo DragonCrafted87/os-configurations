@@ -4,13 +4,13 @@
 
 Name:           wayland-protocols
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        wayland-protocols for the homelab /usr/local prefix
 License:        MIT
 URL:            https://gitlab.freedesktop.org/wayland/wayland-protocols/-
 Source0:        https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/%{pkg_tag}/wayland-protocols-%{pkg_tag}.tar.gz
-BuildRequires:  meson ninja gcc gcc-c++ pkgconf
+BuildRequires:  meson ninja homelab-llvm pkgconf
 
 %description
 wayland-protocols built from the pin in setup/versions.conf. Files install under /usr/local.

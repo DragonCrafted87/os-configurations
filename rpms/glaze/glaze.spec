@@ -4,13 +4,13 @@
 
 Name:           glaze
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        glaze for the homelab /usr/local prefix
 License:        MIT
 URL:            https://github.com/stephenberry/glaze
 Source0:        https://github.com/stephenberry/glaze/archive/refs/tags/%{pkg_tag}.tar.gz
-BuildRequires:  cmake gcc gcc-c++ pkgconf make
+BuildRequires:  cmake homelab-llvm pkgconf make
 
 %description
 glaze built from the pin in setup/versions.conf. Files install under /usr/local.

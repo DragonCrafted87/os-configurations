@@ -4,14 +4,14 @@
 
 Name:           boinc
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        boinc for the homelab /usr/local prefix
 License:        LGPL-3.0-or-later
 URL:            https://github.com/BOINC/boinc
 Source0:        https://github.com/BOINC/boinc/archive/refs/tags/client_release/8.2/%{pkg_version}.tar.gz
 Patch0:         opencl-libadd.patch
-BuildRequires:  clang make autoconf automake libtool pkgconf m4 opencl-headers lib64OpenCL-devel
+BuildRequires:  homelab-llvm make autoconf automake libtool pkgconf m4 opencl-headers lib64OpenCL-devel
 
 %description
 boinc built from the pin in setup/versions.conf. Files install under /usr/local.

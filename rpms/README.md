@@ -11,8 +11,12 @@ rpms/build.sh
 ```
 
 A build produces `rpms/out/<arch>/<name>-<version>-1.<arch>.rpm` for
-`x86_64` (`-march=x86-64`, GCC, except BOINC which stays on Clang) and
-`znver1` (`-march=znver1`). OpenMandriva would append its dist tag and
+`x86_64` (`-march=x86-64`) and `znver1` (`-march=znver1`). A package
+directory can list a smaller set in `arches`, one arch per line.
+`homelab-llvm` is znver1 only. Once `/usr/local/bin/clang` from that
+package is installed, every later package is compiled with it. Until
+then, BOINC uses the distro Clang and the other packages use GCC. The
+LLVM package bootstraps from the host GCC inside `llvm/bootstrap.sh`. OpenMandriva would append its dist tag and
 then run rpmlint. The driver sets the RPM filename to the path above
 and turns that package check off, because these packages install under
 `/usr/local` on purpose. A second run leaves an RPM that is already

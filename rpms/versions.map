@@ -1,6 +1,8 @@
 # name  versions.conf key  transform
 # transform is strip_v, xkb, full, or fixed:VERSION.
 # A hyphen in that version becomes a dot. RPM versions cannot contain one.
+llvm LLVM_TAG llvmorg
+rust RUST_VERSION full
 wayland-protocols WAYLAND_PROTOCOLS_TAG strip_v
 libxkbcommon LIBXKBCOMMON_TAG xkb
 libinput LIBINPUT_TAG strip_v
@@ -33,3 +35,4 @@ xdg-desktop-portal-hyprland XDPH_TAG strip_v
 hyprdesk HYPRDESK_REV full
 hyprcapture HYPRCAPTURE_REV full
 boinc BOINC_VERSION full
+makemkv MAKEMKV_VERSION full

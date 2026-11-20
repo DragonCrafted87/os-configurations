@@ -4,14 +4,14 @@
 
 Name:           xcb-errors
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        xcb-errors for the homelab /usr/local prefix
 License:        MIT
 URL:            https://gitlab.freedesktop.org/xorg/lib/libxcb-errors/-
 Source0:        https://gitlab.freedesktop.org/xorg/lib/libxcb-errors/-/archive/%{pkg_tag}/libxcb-errors-%{pkg_tag}.tar.gz
 Source1:        https://gitlab.freedesktop.org/xorg/util/xcb-util-m4/-/archive/master/xcb-util-m4-master.tar.gz
-BuildRequires:  autoconf automake libtool gcc gcc-c++ pkgconf make x11-util-macros
+BuildRequires:  autoconf automake libtool homelab-llvm pkgconf make x11-util-macros
 
 %description
 xcb-errors built from the pin in setup/versions.conf. Files install under /usr/local.

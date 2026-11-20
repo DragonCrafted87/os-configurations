@@ -4,13 +4,13 @@
 
 Name:           hyprlang
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        hyprlang for the homelab /usr/local prefix
 License:        BSD-3-Clause
 URL:            https://github.com/hyprwm/hyprlang
 Source0:        https://github.com/hyprwm/hyprlang/archive/refs/tags/%{pkg_tag}.tar.gz
-BuildRequires:  cmake gcc gcc-c++ pkgconf make
+BuildRequires:  cmake homelab-llvm pkgconf make
 Requires:       hyprutils
 
 %description

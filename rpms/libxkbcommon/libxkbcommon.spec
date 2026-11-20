@@ -4,13 +4,13 @@
 
 Name:           homelab-libxkbcommon
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        libxkbcommon for the homelab /usr/local prefix
 License:        MIT
 URL:            https://github.com/xkbcommon/libxkbcommon
 Source0:        https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/%{pkg_tag}.tar.gz
-BuildRequires:  meson ninja gcc gcc-c++ pkgconf
+BuildRequires:  meson ninja homelab-llvm pkgconf
 
 %description
 libxkbcommon built from the pin in setup/versions.conf. Files install under /usr/local.

@@ -20,7 +20,7 @@ while IFS= read -r -d '' rpm; do
     pulp --base-url "$base" rpm content upload --repository "$name" --file "$rpm"
 done
 
-publication="$(pulp --base-url "$base" rpm publication create --repository "$name" | awk '/^href:/ { print $2; exit }')"
+publication="$(pulp --base-url "$base" --format yaml rpm publication create --repository "$name" | awk '/^pulp_href:|^href:/ { print $2; exit }')"
 [[ -n "$publication" ]] || {
     printf 'Pulp did not return a publication href\n' >&2
     exit 1

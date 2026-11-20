@@ -4,13 +4,13 @@
 
 Name:           homelab-libinput
 Version:        %{pkg_version}
-Release:        1
+Release:        2
 Vendor:         homelab
 Summary:        libinput for the homelab /usr/local prefix
 License:        MIT
 URL:            https://gitlab.freedesktop.org/libinput/libinput/-
 Source0:        https://gitlab.freedesktop.org/libinput/libinput/-/archive/%{pkg_tag}/libinput-%{pkg_tag}.tar.gz
-BuildRequires:  meson ninja gcc gcc-c++ pkgconf
+BuildRequires:  meson ninja homelab-llvm pkgconf
 
 %description
 libinput built from the pin in setup/versions.conf. Files install under /usr/local.
